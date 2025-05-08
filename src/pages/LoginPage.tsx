@@ -1,10 +1,11 @@
 
-import React, { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ShieldAlert, Lock, Mail } from 'lucide-react';
+import { toast } from 'sonner';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -12,6 +13,13 @@ const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const { signIn, isAuthenticated } = useAuth();
+  const location = useLocation();
+
+  // Pre-fill with admin credentials for easier testing
+  useEffect(() => {
+    setEmail('owner@admin.com');
+    setPassword('admin123456');
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,6 +35,7 @@ const LoginPage = () => {
     }
   };
 
+  // If already authenticated, redirect to dashboard
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -109,6 +118,9 @@ const LoginPage = () => {
         <div className="text-center text-sm text-muted-foreground">
           <p className="mt-3">
             تحتاج مساعدة؟ اتصل بمسؤول النظام
+          </p>
+          <p className="mt-1">
+            البريد الإلكتروني: owner@admin.com | كلمة المرور: admin123456
           </p>
         </div>
       </div>

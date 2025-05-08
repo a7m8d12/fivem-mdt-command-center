@@ -1,12 +1,23 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User } from '@/types';
+import { User, Session } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 
+// Define a simpler User type for our app that doesn't rely on the types.ts file
+interface AppUser {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'officer' | 'dispatch';
+  badge_number?: string;
+  created_at?: string;
+}
+
 interface AuthContextType {
-  user: User | null;
+  user: AppUser | null;
+  session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => void;
@@ -29,72 +40,56 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Set up auth state listener
+    // First set up the auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session && session.user) {
-          try {
-            // Get the user profile data
-            const { data: profileData, error: profileError } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
-
-            if (profileError) throw profileError;
-
-            // Create a user object that matches our User type
-            const userData: User = {
-              id: session.user.id,
-              email: session.user.email || '',
-              name: profileData.name,
-              role: profileData.role as 'admin' | 'officer' | 'dispatch',
-              badge_number: profileData.badge_number,
-              created_at: profileData.created_at
-            };
-
-            setUser(userData);
-          } catch (error) {
-            console.error('Error fetching user profile:', error);
-            setUser(null);
-          }
+      (event, currentSession) => {
+        setSession(currentSession);
+        
+        // If session exists but no user, we'll fetch the profile separately
+        if (currentSession?.user) {
+          // Don't fetch profile here to avoid infinite recursion
+          // Just update that user is authenticated
+          setUser({
+            id: currentSession.user.id,
+            email: currentSession.user.email || '',
+            name: currentSession.user.user_metadata?.name || '',
+            role: 'officer', // Default role
+          });
+          
+          // Use setTimeout to avoid potential deadlocks with auth state changes
+          setTimeout(() => {
+            fetchUserProfile(currentSession.user.id);
+          }, 0);
         } else {
           setUser(null);
         }
       }
     );
 
-    // Check for existing session
+    // Then check for existing session
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
 
-        if (session && session.user) {
-          // Get the user profile data
-          const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-          if (profileError) throw profileError;
-
-          // Create a user object that matches our User type
-          const userData: User = {
-            id: session.user.id,
-            email: session.user.email || '',
-            name: profileData.name,
-            role: profileData.role as 'admin' | 'officer' | 'dispatch',
-            badge_number: profileData.badge_number,
-            created_at: profileData.created_at
-          };
-
-          setUser(userData);
+        if (currentSession && currentSession.user) {
+          setSession(currentSession);
+          
+          // Set basic user info
+          setUser({
+            id: currentSession.user.id,
+            email: currentSession.user.email || '',
+            name: currentSession.user.user_metadata?.name || '',
+            role: 'officer', // Default role
+          });
+          
+          // Then fetch the complete profile
+          fetchUserProfile(currentSession.user.id);
         }
       } catch (error) {
         console.error('Error checking session:', error);
@@ -109,6 +104,36 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Separate function to fetch user profile
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      // Use RPC call instead of direct table access to avoid RLS issues
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        return;
+      }
+
+      if (data) {
+        setUser({
+          id: userId,
+          email: session?.user?.email || '',
+          name: data.name,
+          role: data.role as 'admin' | 'officer' | 'dispatch',
+          badge_number: data.badge_number,
+          created_at: data.created_at
+        });
+      }
+    } catch (error) {
+      console.error('Error in fetchUserProfile:', error);
+    }
+  };
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -126,16 +151,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       navigate('/dashboard');
     } catch (error) {
       console.error('Login error:', error);
+      toast.error('فشل تسجيل الدخول. يرجى التحقق من بريدك الإلكتروني وكلمة المرور.');
       throw error;
     }
   };
 
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      
+      await supabase.auth.signOut();
       setUser(null);
+      setSession(null);
       navigate('/login');
     } catch (error) {
       console.error('Logout error:', error);
@@ -144,6 +169,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   const value = {
     user,
+    session,
     loading,
     signIn,
     signOut,

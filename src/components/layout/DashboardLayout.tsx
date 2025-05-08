@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from '@/components/layout/Sidebar';
@@ -12,11 +12,30 @@ import {
 import { Button } from '@/components/ui/button';
 
 const DashboardLayout = () => {
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, loading, signOut, isAdmin } = useAuth();
   const navigate = useNavigate();
 
+  // Use useEffect for navigation to avoid React warnings
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/login');
+    }
+  }, [user, loading, navigate]);
+
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <ShieldAlert className="mx-auto h-16 w-16 text-police-blue animate-pulse" />
+          <p className="mt-4 text-lg">جاري تحميل النظام...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated and not loading, the useEffect will handle redirection
   if (!user) {
-    navigate('/login');
     return null;
   }
 
