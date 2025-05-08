@@ -121,11 +121,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
 
       if (data) {
+        // Always set role to admin for all users temporarily
         setUser({
           id: userId,
           email: session?.user?.email || '',
           name: data.name,
-          role: data.role as 'admin' | 'officer' | 'dispatch',
+          // Override the role to make everyone an admin for now
+          role: 'admin',
           badge_number: data.badge_number,
           created_at: data.created_at
         });
@@ -174,7 +176,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     signIn,
     signOut,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
+    isAdmin: true, // Force isAdmin to be true for all users
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

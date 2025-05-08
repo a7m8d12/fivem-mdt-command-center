@@ -8,11 +8,13 @@ import {
   AlertTriangle, 
   Search,
   ClipboardList,
-  User
+  User,
+  Bell
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 const DashboardPage = () => {
   const navigate = useNavigate();
@@ -117,10 +119,10 @@ const DashboardPage = () => {
               <Button variant="outline" className="flex items-center justify-center gap-2" onClick={() => navigate('/reports/create')}>
                 <FileText className="h-4 w-4" /> إنشاء تقرير
               </Button>
-              <Button variant="outline" className="flex items-center justify-center gap-2" onClick={() => navigate('/citizens/create')}>
+              <Button variant="outline" className="flex items-center justify-center gap-2" onClick={() => navigate('/citizens')}>
                 <Users className="h-4 w-4" /> إضافة مواطن
               </Button>
-              <Button variant="outline" className="flex items-center justify-center gap-2" onClick={() => navigate('/citations/create')}>
+              <Button variant="outline" className="flex items-center justify-center gap-2" onClick={() => navigate('/citations')}>
                 <ClipboardList className="h-4 w-4" /> إصدار مخالفة
               </Button>
             </div>
