@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -14,86 +14,21 @@ import {
   DialogHeader, 
   DialogTitle,
   DialogFooter,
-  DialogTrigger
+  DialogDescription
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-
-// Mock data for vehicles
-const mockVehicles = [
-  {
-    id: '201',
-    citizen_id: '1',
-    citizen_name: 'أحمد السالم',
-    plate: 'ACB 1234',
-    model: 'تويوتا كامري 2022',
-    color: 'أبيض',
-    registered: true,
-    stolen: false,
-    created_at: '2023-01-20T08:30:00.000Z',
-  },
-  {
-    id: '202',
-    citizen_id: '1',
-    citizen_name: 'أحمد السالم',
-    plate: 'XYZ 5678',
-    model: 'نيسان باترول 2020',
-    color: 'أسود',
-    registered: true,
-    stolen: false,
-    created_at: '2023-02-15T10:15:00.000Z',
-  },
-  {
-    id: '203',
-    citizen_id: '3',
-    citizen_name: 'خالد المحمد',
-    plate: 'LMN 9012',
-    model: 'هوندا أكورد 2021',
-    color: 'فضي',
-    registered: false,
-    stolen: true,
-    created_at: '2023-03-05T14:45:00.000Z',
-  },
-  {
-    id: '204',
-    citizen_id: '2',
-    citizen_name: 'سارة العتيبي',
-    plate: 'DEF 3456',
-    model: 'مرسيدس E-Class 2023',
-    color: 'أزرق',
-    registered: true,
-    stolen: false,
-    created_at: '2023-04-10T09:20:00.000Z',
-  },
-  {
-    id: '205',
-    citizen_id: '4',
-    citizen_name: 'منى الحربي',
-    plate: 'GHI 7890',
-    model: 'لكزس RX 2022',
-    color: 'أحمر',
-    registered: true,
-    stolen: false,
-    created_at: '2023-05-15T11:30:00.000Z',
-  },
-];
-
-// Mock citizens data
-const mockCitizens = [
-  { id: '1', name: 'أحمد السالم' },
-  { id: '2', name: 'سارة العتيبي' },
-  { id: '3', name: 'خالد المحمد' },
-  { id: '4', name: 'منى الحربي' },
-  { id: '5', name: 'عبدالله القحطاني' },
-];
+import { supabase } from "@/integrations/supabase/client";
 
 const VehiclesPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [vehicles, setVehicles] = useState(mockVehicles);
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [citizens, setCitizens] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
   
   // New vehicle form state
@@ -105,6 +40,58 @@ const VehiclesPage = () => {
     registered: true,
     stolen: false,
   });
+
+  // Fetch vehicles and citizens from Supabase
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch vehicles with citizen information
+        const { data: vehiclesData, error: vehiclesError } = await supabase
+          .from('vehicles')
+          .select(`
+            *,
+            citizens (first_name, last_name)
+          `);
+          
+        if (vehiclesError) throw vehiclesError;
+        
+        // Transform data
+        const transformedVehicles = vehiclesData.map((v: any) => ({
+          id: v.id,
+          citizen_id: v.citizen_id,
+          citizen_name: v.citizens ? `${v.citizens.first_name} ${v.citizens.last_name}` : 'مواطن غير معروف',
+          plate: v.plate,
+          model: v.model,
+          color: v.color,
+          registered: v.registered,
+          stolen: v.stolen,
+          created_at: v.created_at
+        }));
+        
+        setVehicles(transformedVehicles);
+        
+        // Fetch citizens for dropdown
+        const { data: citizensData, error: citizensError } = await supabase
+          .from('citizens')
+          .select('id, first_name, last_name');
+          
+        if (citizensError) throw citizensError;
+        
+        setCitizens(citizensData.map((c: any) => ({
+          id: c.id,
+          name: `${c.first_name} ${c.last_name}`
+        })));
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast.error('فشل في جلب البيانات');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
 
   // Filter vehicles based on search query
   const filteredVehicles = searchQuery
@@ -124,7 +111,7 @@ const VehiclesPage = () => {
     }
   };
 
-  const handleAddVehicle = () => {
+  const handleAddVehicle = async () => {
     // Validate input
     if (!newVehicle.citizen_id) {
       toast.error("الرجاء اختيار مالك المركبة");
@@ -145,37 +132,61 @@ const VehiclesPage = () => {
       toast.error("الرجاء إدخال لون المركبة");
       return;
     }
-
-    // Find citizen name
-    const citizen = mockCitizens.find(c => c.id === newVehicle.citizen_id);
     
-    // Add new vehicle
-    const newVehicleComplete = {
-      id: (vehicles.length + 1).toString(),
-      citizen_id: newVehicle.citizen_id,
-      citizen_name: citizen ? citizen.name : 'مواطن غير معروف',
-      plate: newVehicle.plate.toUpperCase(),
-      model: newVehicle.model,
-      color: newVehicle.color,
-      registered: newVehicle.registered,
-      stolen: newVehicle.stolen,
-      created_at: new Date().toISOString(),
-    };
-    
-    setVehicles([newVehicleComplete, ...vehicles]);
-    setIsAddDialogOpen(false);
-    
-    // Reset form
-    setNewVehicle({
-      citizen_id: '',
-      plate: '',
-      model: '',
-      color: '',
-      registered: true,
-      stolen: false,
-    });
-    
-    toast.success("تمت إضافة المركبة بنجاح");
+    try {
+      // Add vehicle to Supabase
+      const { data, error } = await supabase
+        .from('vehicles')
+        .insert({
+          citizen_id: newVehicle.citizen_id,
+          plate: newVehicle.plate.toUpperCase(),
+          model: newVehicle.model,
+          color: newVehicle.color,
+          registered: newVehicle.registered,
+          stolen: newVehicle.stolen,
+          created_by: user?.id || '00000000-0000-0000-0000-000000000000'
+        })
+        .select(`
+          *,
+          citizens (first_name, last_name)
+        `);
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        // Add to local state
+        const newVehicleData = {
+          id: data[0].id,
+          citizen_id: data[0].citizen_id,
+          citizen_name: data[0].citizens ? `${data[0].citizens.first_name} ${data[0].citizens.last_name}` : 'مواطن غير معروف',
+          plate: data[0].plate,
+          model: data[0].model,
+          color: data[0].color,
+          registered: data[0].registered,
+          stolen: data[0].stolen,
+          created_at: data[0].created_at
+        };
+        
+        setVehicles([newVehicleData, ...vehicles]);
+      }
+      
+      setIsAddDialogOpen(false);
+      
+      // Reset form
+      setNewVehicle({
+        citizen_id: '',
+        plate: '',
+        model: '',
+        color: '',
+        registered: true,
+        stolen: false,
+      });
+      
+      toast.success("تمت إضافة المركبة بنجاح");
+    } catch (error) {
+      console.error('Error adding vehicle:', error);
+      toast.error("فشل في إضافة المركبة");
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -219,17 +230,24 @@ const VehiclesPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredVehicles.map((vehicle) => (
-              <tr key={vehicle.id} className="cursor-pointer">
-                <td className="font-medium" dir="ltr">{vehicle.plate}</td>
-                <td>{vehicle.model}</td>
-                <td>{vehicle.color}</td>
-                <td>{vehicle.citizen_name}</td>
-                <td>{formatDate(vehicle.created_at)}</td>
-                <td>{getStatusBadge(vehicle)}</td>
+            {isLoading ? (
+              <tr>
+                <td colSpan={6} className="text-center py-4 text-muted-foreground">
+                  جاري تحميل البيانات...
+                </td>
               </tr>
-            ))}
-            {filteredVehicles.length === 0 && (
+            ) : filteredVehicles.length > 0 ? (
+              filteredVehicles.map((vehicle) => (
+                <tr key={vehicle.id} className="cursor-pointer">
+                  <td className="font-medium" dir="ltr">{vehicle.plate}</td>
+                  <td>{vehicle.model}</td>
+                  <td>{vehicle.color}</td>
+                  <td>{vehicle.citizen_name}</td>
+                  <td>{formatDate(vehicle.created_at)}</td>
+                  <td>{getStatusBadge(vehicle)}</td>
+                </tr>
+              ))
+            ) : (
               <tr>
                 <td colSpan={6} className="text-center py-4 text-muted-foreground">
                   لا توجد مركبات مطابقة للبحث
@@ -245,6 +263,7 @@ const VehiclesPage = () => {
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle className="text-center text-xl">إضافة مركبة جديدة</DialogTitle>
+            <DialogDescription className="text-center">أدخل معلومات المركبة التي تريد إضافتها</DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
@@ -258,7 +277,7 @@ const VehiclesPage = () => {
                   <SelectValue placeholder="اختر المالك" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockCitizens.map((citizen) => (
+                  {citizens.map((citizen) => (
                     <SelectItem key={citizen.id} value={citizen.id}>
                       {citizen.name}
                     </SelectItem>

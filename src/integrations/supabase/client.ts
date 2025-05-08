@@ -16,8 +16,15 @@ export const supabase = createClient<Database>(
     auth: {
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: true,
-      storage: localStorage
+      detectSessionInUrl: true
+    },
+    db: {
+      schema: 'public'
+    },
+    global: {
+      headers: {
+        'x-application-name': 'police-system'
+      }
     }
   }
 );
