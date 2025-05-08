@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useNavigate } from 'react-router-dom';
 import { User } from '@/types';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AuthContextType {
   user: User | null;
@@ -33,39 +34,90 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if there's a user in localStorage
-    const storedUser = localStorage.getItem('mdt_user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (error) {
-        console.error('Failed to parse stored user:', error);
-        localStorage.removeItem('mdt_user');
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session && session.user) {
+          try {
+            // Get the user profile data
+            const { data: profileData, error: profileError } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+
+            if (profileError) throw profileError;
+
+            // Create a user object that matches our User type
+            const userData: User = {
+              id: session.user.id,
+              email: session.user.email || '',
+              name: profileData.name,
+              role: profileData.role as 'admin' | 'officer' | 'dispatch',
+              badge_number: profileData.badge_number,
+              created_at: profileData.created_at
+            };
+
+            setUser(userData);
+          } catch (error) {
+            console.error('Error fetching user profile:', error);
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
       }
-    }
-    setLoading(false);
+    );
+
+    // Check for existing session
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session && session.user) {
+          // Get the user profile data
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (profileError) throw profileError;
+
+          // Create a user object that matches our User type
+          const userData: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: profileData.name,
+            role: profileData.role as 'admin' | 'officer' | 'dispatch',
+            badge_number: profileData.badge_number,
+            created_at: profileData.created_at
+          };
+
+          setUser(userData);
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // Mock sign in for now - will be replaced with Supabase auth
   const signIn = async (email: string, password: string) => {
     try {
-      // Mock authentication - will be replaced with actual auth
-      if (password.length < 6) {
-        throw new Error('Invalid credentials');
-      }
-      
-      // Mock user data
-      const mockUser: User = {
-        id: '1',
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        name: email.split('@')[0],
-        role: email.includes('admin') ? 'admin' : 'officer',
-        badge_number: Math.floor(1000 + Math.random() * 9000).toString(),
-        created_at: new Date().toISOString()
-      };
+        password
+      });
       
-      setUser(mockUser);
-      localStorage.setItem('mdt_user', JSON.stringify(mockUser));
+      if (error) throw error;
       
       toast.success('تم تسجيل الدخول بنجاح', {
         position: 'top-center'
@@ -78,10 +130,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const signOut = () => {
-    setUser(null);
-    localStorage.removeItem('mdt_user');
-    navigate('/login');
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      setUser(null);
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const value = {

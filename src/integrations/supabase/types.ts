@@ -9,7 +9,286 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      arrest_reports: {
+        Row: {
+          arrest_date: string
+          charges: string[]
+          citizen_id: string
+          created_at: string
+          id: string
+          location: string
+          narrative: string
+          officer_id: string
+        }
+        Insert: {
+          arrest_date: string
+          charges: string[]
+          citizen_id: string
+          created_at?: string
+          id?: string
+          location: string
+          narrative: string
+          officer_id: string
+        }
+        Update: {
+          arrest_date?: string
+          charges?: string[]
+          citizen_id?: string
+          created_at?: string
+          id?: string
+          location?: string
+          narrative?: string
+          officer_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "arrest_reports_citizen_id_fkey"
+            columns: ["citizen_id"]
+            isOneToOne: false
+            referencedRelation: "citizens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      citations: {
+        Row: {
+          citizen_id: string
+          created_at: string
+          date: string
+          fine_amount: number
+          id: string
+          location: string | null
+          officer_id: string
+          paid: boolean | null
+          violation: string
+        }
+        Insert: {
+          citizen_id: string
+          created_at?: string
+          date: string
+          fine_amount: number
+          id?: string
+          location?: string | null
+          officer_id: string
+          paid?: boolean | null
+          violation: string
+        }
+        Update: {
+          citizen_id?: string
+          created_at?: string
+          date?: string
+          fine_amount?: number
+          id?: string
+          location?: string | null
+          officer_id?: string
+          paid?: boolean | null
+          violation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "citations_citizen_id_fkey"
+            columns: ["citizen_id"]
+            isOneToOne: false
+            referencedRelation: "citizens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      citizens: {
+        Row: {
+          address: string | null
+          created_at: string
+          created_by: string
+          date_of_birth: string
+          first_name: string
+          gender: string
+          id: string
+          image_url: string | null
+          last_name: string
+          license_status: string | null
+          phone: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          created_by: string
+          date_of_birth: string
+          first_name: string
+          gender: string
+          id?: string
+          image_url?: string | null
+          last_name: string
+          license_status?: string | null
+          phone?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          created_by?: string
+          date_of_birth?: string
+          first_name?: string
+          gender?: string
+          id?: string
+          image_url?: string | null
+          last_name?: string
+          license_status?: string | null
+          phone?: string | null
+        }
+        Relationships: []
+      }
+      criminal_records: {
+        Row: {
+          citizen_id: string
+          created_at: string
+          date: string
+          description: string | null
+          id: string
+          offense: string
+          officer_id: string
+          status: string | null
+        }
+        Insert: {
+          citizen_id: string
+          created_at?: string
+          date: string
+          description?: string | null
+          id?: string
+          offense: string
+          officer_id: string
+          status?: string | null
+        }
+        Update: {
+          citizen_id?: string
+          created_at?: string
+          date?: string
+          description?: string | null
+          id?: string
+          offense?: string
+          officer_id?: string
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "criminal_records_citizen_id_fkey"
+            columns: ["citizen_id"]
+            isOneToOne: false
+            referencedRelation: "citizens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          badge_number: string | null
+          created_at: string
+          id: string
+          name: string
+          role: string
+          updated_at: string
+        }
+        Insert: {
+          badge_number?: string | null
+          created_at?: string
+          id: string
+          name: string
+          role?: string
+          updated_at?: string
+        }
+        Update: {
+          badge_number?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          role?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      vehicles: {
+        Row: {
+          citizen_id: string
+          color: string
+          created_at: string
+          created_by: string
+          id: string
+          model: string
+          plate: string
+          registered: boolean | null
+          stolen: boolean | null
+        }
+        Insert: {
+          citizen_id: string
+          color: string
+          created_at?: string
+          created_by: string
+          id?: string
+          model: string
+          plate: string
+          registered?: boolean | null
+          stolen?: boolean | null
+        }
+        Update: {
+          citizen_id?: string
+          color?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          model?: string
+          plate?: string
+          registered?: boolean | null
+          stolen?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_citizen_id_fkey"
+            columns: ["citizen_id"]
+            isOneToOne: false
+            referencedRelation: "citizens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      warrants: {
+        Row: {
+          citizen_id: string
+          created_at: string
+          expiry_date: string
+          id: string
+          issue_date: string
+          issuing_officer_id: string
+          reason: string
+          status: string | null
+        }
+        Insert: {
+          citizen_id: string
+          created_at?: string
+          expiry_date: string
+          id?: string
+          issue_date: string
+          issuing_officer_id: string
+          reason: string
+          status?: string | null
+        }
+        Update: {
+          citizen_id?: string
+          created_at?: string
+          expiry_date?: string
+          id?: string
+          issue_date?: string
+          issuing_officer_id?: string
+          reason?: string
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warrants_citizen_id_fkey"
+            columns: ["citizen_id"]
+            isOneToOne: false
+            referencedRelation: "citizens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
