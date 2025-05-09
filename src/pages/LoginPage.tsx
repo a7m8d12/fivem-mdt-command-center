@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ShieldAlert, Lock, Mail } from 'lucide-react';
 import { toast } from 'sonner';
-
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,7 +15,6 @@ const LoginPage = () => {
     isAuthenticated
   } = useAuth();
   const location = useLocation();
-  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -82,11 +79,7 @@ const LoginPage = () => {
             </div>
           </form>
           
-          <div className="mt-4 p-3 bg-muted/50 rounded-md">
-            <p className="text-sm text-muted-foreground">بيانات المستخدم للتجربة:</p>
-            <p className="text-xs mt-1">البريد الإلكتروني: owner@admin.com</p>
-            <p className="text-xs">كلمة المرور: admin123456</p>
-          </div>
+          
         </div>
         
         <div className="text-center text-sm text-muted-foreground">
