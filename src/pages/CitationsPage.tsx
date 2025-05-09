@@ -1,14 +1,15 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { 
   Search, 
   Plus,
-  ClipboardList,
-  Calendar,
-  MapPin
+  Filter,
+  Pencil,
+  Trash2,
+  Calendar
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -16,180 +17,289 @@ import {
   DialogHeader, 
   DialogTitle,
   DialogFooter,
+  DialogTrigger,
+  DialogDescription
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext';
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-
-// Mock data for citations
-const mockCitations = [
-  {
-    id: '301',
-    citizen_id: '1',
-    citizen_name: 'أحمد السالم',
-    violation: 'تجاوز السرعة',
-    fine_amount: 500,
-    date: '2023-06-12T14:30:00.000Z',
-    location: 'طريق الملك فهد، الرياض',
-    officer_id: '1',
-    officer_name: 'فهد العنزي',
-    paid: false,
-  },
-  {
-    id: '302',
-    citizen_id: '1',
-    citizen_name: 'أحمد السالم',
-    violation: 'وقوف في مكان ممنوع',
-    fine_amount: 200,
-    date: '2023-08-03T09:15:00.000Z',
-    location: 'شارع التحلية، جدة',
-    officer_id: '2',
-    officer_name: 'عبدالله خالد',
-    paid: true,
-  },
-  {
-    id: '303',
-    citizen_id: '2',
-    citizen_name: 'سارة العتيبي',
-    violation: 'استخدام الهاتف أثناء القيادة',
-    fine_amount: 300,
-    date: '2023-09-15T11:45:00.000Z',
-    location: 'طريق الأمير محمد بن سلمان، الرياض',
-    officer_id: '1',
-    officer_name: 'فهد العنزي',
-    paid: false,
-  },
-  {
-    id: '304',
-    citizen_id: '3',
-    citizen_name: 'خالد المحمد',
-    violation: 'عدم ربط حزام الأمان',
-    fine_amount: 150,
-    date: '2023-10-05T16:20:00.000Z',
-    location: 'طريق الملك عبدالعزيز، الدمام',
-    officer_id: '3',
-    officer_name: 'محمد السعيد',
-    paid: true,
-  },
-];
-
-// Mock citizens data
-const mockCitizens = [
-  { id: '1', name: 'أحمد السالم' },
-  { id: '2', name: 'سارة العتيبي' },
-  { id: '3', name: 'خالد المحمد' },
-  { id: '4', name: 'منى الحربي' },
-  { id: '5', name: 'عبدالله القحطاني' },
-];
-
-// Common violations
-const commonViolations = [
-  "تجاوز السرعة",
-  "وقوف في مكان ممنوع",
-  "استخدام الهاتف أثناء القيادة",
-  "عدم ربط حزام الأمان",
-  "قطع الإشارة الحمراء",
-  "قيادة مركبة بدون لوحات",
-  "قيادة مركبة بلوحات غير مقروءة",
-  "عدم حمل رخصة القيادة",
-  "عدم حمل استمارة المركبة",
-  "تجاوز خط السير",
-];
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from "@/integrations/supabase/client";
+import { Citation } from '@/types';
 
 const CitationsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [citations, setCitations] = useState(mockCitations);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [citations, setCitations] = useState<Citation[]>([]);
+  const [citizens, setCitizens] = useState<any[]>([]);
+  const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
-  
+
   // New citation form state
   const [newCitation, setNewCitation] = useState({
     citizen_id: '',
     violation: '',
-    fine_amount: 300,
+    fine_amount: 0,
     date: new Date().toISOString().split('T')[0],
     location: '',
-    paid: false,
+    paid: false
   });
+
+  // Edit citation form state
+  const [editCitation, setEditCitation] = useState({
+    id: '',
+    citizen_id: '',
+    violation: '',
+    fine_amount: 0,
+    date: '',
+    location: '',
+    paid: false
+  });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch citations with citizen information
+        const { data: citationsData, error: citationsError } = await supabase
+          .from('citations')
+          .select(`
+            *,
+            citizens (first_name, last_name),
+            profiles:officer_id (name)
+          `)
+          .order('created_at', { ascending: false });
+          
+        if (citationsError) throw citationsError;
+        
+        // Transform data to match Citation type
+        const transformedCitations: Citation[] = citationsData.map((c: any) => ({
+          id: c.id,
+          citizen_id: c.citizen_id,
+          violation: c.violation,
+          fine_amount: c.fine_amount,
+          date: c.date,
+          location: c.location || '',
+          officer_id: c.officer_id,
+          officer_name: (c.profiles && c.profiles.name) ? c.profiles.name : 'ضابط غير معروف',
+          paid: c.paid || false,
+          created_at: c.created_at,
+        }));
+        
+        setCitations(transformedCitations);
+        
+        // Fetch citizens for dropdown
+        const { data: citizensData, error: citizensError } = await supabase
+          .from('citizens')
+          .select('id, first_name, last_name');
+          
+        if (citizensError) throw citizensError;
+        
+        setCitizens(citizensData.map((c: any) => ({
+          id: c.id,
+          name: `${c.first_name} ${c.last_name}`
+        })));
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast.error('فشل في جلب البيانات');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
 
   // Filter citations based on search query
   const filteredCitations = searchQuery
     ? citations.filter(citation => 
-        citation.citizen_name.includes(searchQuery) ||
         citation.violation.includes(searchQuery) ||
-        citation.location.includes(searchQuery))
+        citation.location && citation.location.includes(searchQuery))
     : citations;
 
-  const handleAddCitation = () => {
+  const handleAddCitation = async () => {
     // Validate input
     if (!newCitation.citizen_id) {
-      toast.error("الرجاء اختيار المواطن");
+      toast.error("الرجاء اختيار مواطن");
       return;
     }
 
     if (!newCitation.violation) {
-      toast.error("الرجاء إدخال المخالفة");
+      toast.error("الرجاء إدخال نوع المخالفة");
       return;
     }
-
-    if (newCitation.fine_amount <= 0) {
+    
+    if (!newCitation.fine_amount || newCitation.fine_amount <= 0) {
       toast.error("الرجاء إدخال قيمة الغرامة بشكل صحيح");
       return;
     }
-
-    if (!newCitation.location) {
-      toast.error("الرجاء إدخال موقع المخالفة");
-      return;
+    
+    try {
+      // Add citation to Supabase
+      const { data, error } = await supabase
+        .from('citations')
+        .insert({
+          citizen_id: newCitation.citizen_id,
+          violation: newCitation.violation,
+          fine_amount: newCitation.fine_amount,
+          date: newCitation.date,
+          location: newCitation.location || null,
+          officer_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          paid: newCitation.paid
+        })
+        .select(`
+          *,
+          citizens (first_name, last_name),
+          profiles:officer_id (name)
+        `);
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        const c = data[0];
+        const newCitationData: Citation = {
+          id: c.id,
+          citizen_id: c.citizen_id,
+          violation: c.violation,
+          fine_amount: c.fine_amount,
+          date: c.date,
+          location: c.location || '',
+          officer_id: c.officer_id,
+          officer_name: (c.profiles && c.profiles.name) ? c.profiles.name : 'ضابط غير معروف',
+          paid: c.paid || false,
+          created_at: c.created_at,
+        };
+        
+        setCitations([newCitationData, ...citations]);
+      }
+      
+      setIsAddDialogOpen(false);
+      
+      // Reset form
+      setNewCitation({
+        citizen_id: '',
+        violation: '',
+        fine_amount: 0,
+        date: new Date().toISOString().split('T')[0],
+        location: '',
+        paid: false
+      });
+      
+      toast.success("تم إضافة المخالفة بنجاح");
+    } catch (error) {
+      console.error('Error adding citation:', error);
+      toast.error("فشل في إضافة المخالفة");
     }
-
-    // Find citizen name
-    const citizen = mockCitizens.find(c => c.id === newCitation.citizen_id);
-    
-    // Add new citation
-    const newCitationComplete = {
-      id: (citations.length + 1).toString(),
-      citizen_id: newCitation.citizen_id,
-      citizen_name: citizen ? citizen.name : 'مواطن غير معروف',
-      violation: newCitation.violation,
-      fine_amount: newCitation.fine_amount,
-      date: new Date(newCitation.date).toISOString(),
-      location: newCitation.location,
-      officer_id: user?.id || '0',
-      officer_name: user?.name || 'ضابط غير معروف',
-      paid: newCitation.paid,
-    };
-    
-    setCitations([newCitationComplete, ...citations]);
-    setIsAddDialogOpen(false);
-    
-    // Reset form
-    setNewCitation({
-      citizen_id: '',
-      violation: '',
-      fine_amount: 300,
-      date: new Date().toISOString().split('T')[0],
-      location: '',
-      paid: false,
+  };
+  
+  const handleEditClick = (citation: Citation) => {
+    setSelectedCitation(citation);
+    setEditCitation({
+      id: citation.id,
+      citizen_id: citation.citizen_id,
+      violation: citation.violation,
+      fine_amount: citation.fine_amount,
+      date: citation.date,
+      location: citation.location || '',
+      paid: citation.paid
     });
+    setIsEditDialogOpen(true);
+  };
+  
+  const handleDeleteClick = (citation: Citation) => {
+    setSelectedCitation(citation);
+    setIsDeleteDialogOpen(true);
+  };
+  
+  const handleEditCitation = async () => {
+    try {
+      const { error } = await supabase
+        .from('citations')
+        .update({
+          violation: editCitation.violation,
+          fine_amount: editCitation.fine_amount,
+          date: editCitation.date,
+          location: editCitation.location || null,
+          paid: editCitation.paid
+        })
+        .eq('id', editCitation.id);
+      
+      if (error) throw error;
+      
+      // Update in local state
+      setCitations(citations.map(c => {
+        if (c.id === editCitation.id) {
+          return {
+            ...c,
+            violation: editCitation.violation,
+            fine_amount: editCitation.fine_amount,
+            date: editCitation.date,
+            location: editCitation.location,
+            paid: editCitation.paid
+          };
+        }
+        return c;
+      }));
+      
+      setIsEditDialogOpen(false);
+      toast.success("تم تحديث المخالفة بنجاح");
+    } catch (error) {
+      console.error('Error updating citation:', error);
+      toast.error("فشل في تحديث المخالفة");
+    }
+  };
+  
+  const handleDeleteCitation = async () => {
+    if (!selectedCitation) return;
     
-    toast.success("تم إصدار المخالفة بنجاح");
+    try {
+      const { error } = await supabase
+        .from('citations')
+        .delete()
+        .eq('id', selectedCitation.id);
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setCitations(citations.filter(c => c.id !== selectedCitation.id));
+      
+      setIsDeleteDialogOpen(false);
+      toast.success("تم حذف المخالفة بنجاح");
+    } catch (error) {
+      console.error('Error deleting citation:', error);
+      toast.error("فشل في حذف المخالفة");
+    }
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ar-SA');
   };
 
+  const findCitizenName = (citizenId: string) => {
+    const citizen = citizens.find(c => c.id === citizenId);
+    return citizen ? citizen.name : 'مواطن غير معروف';
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center">
-          <ClipboardList className="ml-2 h-5 w-5 text-police-blue" />
-          <h2 className="text-2xl font-bold">المخالفات المرورية</h2>
-        </div>
+        <h2 className="text-2xl font-bold">المخالفات</h2>
         <Button className="police-button" onClick={() => setIsAddDialogOpen(true)}>
-          <Plus className="ml-2 h-4 w-4" /> إصدار مخالفة
+          <Plus className="ml-2 h-4 w-4" /> إضافة مخالفة
         </Button>
       </div>
       
@@ -197,7 +307,7 @@ const CitationsPage = () => {
         <div className="relative flex-1">
           <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
-            placeholder="البحث باسم المواطن أو المخالفة..."
+            placeholder="البحث عن مخالفة..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="police-input pr-10"
@@ -216,29 +326,47 @@ const CitationsPage = () => {
               <th>الموقع</th>
               <th>الضابط المسؤول</th>
               <th>الحالة</th>
+              <th>الإجراءات</th>
             </tr>
           </thead>
           <tbody>
-            {filteredCitations.map((citation) => (
-              <tr key={citation.id} className="cursor-pointer">
-                <td className="font-medium">{citation.citizen_name}</td>
-                <td>{citation.violation}</td>
-                <td>{citation.fine_amount} ريال</td>
-                <td>{formatDate(citation.date)}</td>
-                <td>{citation.location}</td>
-                <td>{citation.officer_name}</td>
-                <td>
-                  {citation.paid ? (
-                    <Badge className="badge-green">مدفوعة</Badge>
-                  ) : (
-                    <Badge className="badge-red">غير مدفوعة</Badge>
-                  )}
+            {isLoading ? (
+              <tr>
+                <td colSpan={8} className="text-center py-4 text-muted-foreground">
+                  جاري تحميل البيانات...
                 </td>
               </tr>
-            ))}
-            {filteredCitations.length === 0 && (
+            ) : filteredCitations.length > 0 ? (
+              filteredCitations.map((citation) => (
+                <tr key={citation.id}>
+                  <td>{findCitizenName(citation.citizen_id)}</td>
+                  <td className="font-medium">{citation.violation}</td>
+                  <td>{citation.fine_amount} دينار عراقي</td>
+                  <td>{formatDate(citation.date)}</td>
+                  <td>{citation.location || '-'}</td>
+                  <td>{citation.officer_name}</td>
+                  <td>
+                    {citation.paid ? (
+                      <Badge className="badge-green">مدفوعة</Badge>
+                    ) : (
+                      <Badge className="badge-red">غير مدفوعة</Badge>
+                    )}
+                  </td>
+                  <td>
+                    <div className="flex space-x-2 rtl:space-x-reverse">
+                      <Button variant="ghost" size="sm" onClick={() => handleEditClick(citation)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteClick(citation)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
               <tr>
-                <td colSpan={7} className="text-center py-4 text-muted-foreground">
+                <td colSpan={8} className="text-center py-4 text-muted-foreground">
                   لا توجد مخالفات مطابقة للبحث
                 </td>
               </tr>
@@ -251,7 +379,7 @@ const CitationsPage = () => {
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle className="text-center text-xl">إصدار مخالفة جديدة</DialogTitle>
+            <DialogTitle className="text-center text-xl">إضافة مخالفة جديدة</DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
@@ -265,7 +393,7 @@ const CitationsPage = () => {
                   <SelectValue placeholder="اختر المواطن" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockCitizens.map((citizen) => (
+                  {citizens.map((citizen) => (
                     <SelectItem key={citizen.id} value={citizen.id}>
                       {citizen.name}
                     </SelectItem>
@@ -274,40 +402,30 @@ const CitationsPage = () => {
               </Select>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="violation">المخالفة *</Label>
-                <Select
-                  value={newCitation.violation}
-                  onValueChange={(value) => setNewCitation({...newCitation, violation: value})}
-                >
-                  <SelectTrigger id="violation" className="police-input">
-                    <SelectValue placeholder="اختر المخالفة" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {commonViolations.map((violation) => (
-                      <SelectItem key={violation} value={violation}>
-                        {violation}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="fine_amount">قيمة الغرامة (ريال) *</Label>
-                <Input
-                  id="fine_amount"
-                  type="number"
-                  min={1}
-                  value={newCitation.fine_amount}
-                  onChange={(e) => setNewCitation({...newCitation, fine_amount: parseInt(e.target.value) || 0})}
-                  className="police-input"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="violation">المخالفة *</Label>
+              <Input
+                id="violation"
+                placeholder="أدخل نوع المخالفة..."
+                value={newCitation.violation}
+                onChange={(e) => setNewCitation({...newCitation, violation: e.target.value})}
+                className="police-input"
+              />
             </div>
             
             <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="fine_amount">قيمة الغرامة (بالدينار العراقي) *</Label>
+                <Input
+                  id="fine_amount"
+                  type="number"
+                  placeholder="أدخل قيمة الغرامة..."
+                  value={newCitation.fine_amount}
+                  onChange={(e) => setNewCitation({...newCitation, fine_amount: parseFloat(e.target.value)})}
+                  className="police-input"
+                />
+              </div>
+              
               <div className="space-y-2">
                 <Label htmlFor="date">تاريخ المخالفة *</Label>
                 <div className="relative">
@@ -321,29 +439,33 @@ const CitationsPage = () => {
                   />
                 </div>
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="location">الموقع *</Label>
-                <div className="relative">
-                  <MapPin className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="location"
-                    placeholder="أدخل موقع المخالفة"
-                    value={newCitation.location}
-                    onChange={(e) => setNewCitation({...newCitation, location: e.target.value})}
-                    className="police-input pr-10"
-                  />
-                </div>
-              </div>
             </div>
             
-            <div className="flex items-center space-x-4 rtl:space-x-reverse">
-              <Label htmlFor="paid" className="flex-shrink-0">تم الدفع</Label>
-              <Switch
-                id="paid"
-                checked={newCitation.paid}
-                onCheckedChange={(checked) => setNewCitation({...newCitation, paid: checked})}
+            <div className="space-y-2">
+              <Label htmlFor="location">الموقع</Label>
+              <Input
+                id="location"
+                placeholder="أدخل موقع المخالفة..."
+                value={newCitation.location}
+                onChange={(e) => setNewCitation({...newCitation, location: e.target.value})}
+                className="police-input"
               />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="paid">الحالة</Label>
+              <Select 
+                value={newCitation.paid ? "true" : "false"} 
+                onValueChange={(value) => setNewCitation({...newCitation, paid: value === "true"})}
+              >
+                <SelectTrigger id="paid" className="police-input">
+                  <SelectValue placeholder="اختر حالة الدفع" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="false">غير مدفوعة</SelectItem>
+                  <SelectItem value="true">مدفوعة</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           
@@ -352,11 +474,115 @@ const CitationsPage = () => {
               إلغاء
             </Button>
             <Button className="police-button" onClick={handleAddCitation}>
-              إصدار المخالفة
+              إضافة المخالفة
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Edit Citation Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl">تعديل المخالفة</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="editViolation">المخالفة *</Label>
+              <Input
+                id="editViolation"
+                placeholder="أدخل نوع المخالفة..."
+                value={editCitation.violation}
+                onChange={(e) => setEditCitation({...editCitation, violation: e.target.value})}
+                className="police-input"
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editFineAmount">قيمة الغرامة (بالدينار العراقي) *</Label>
+                <Input
+                  id="editFineAmount"
+                  type="number"
+                  placeholder="أدخل قيمة الغرامة..."
+                  value={editCitation.fine_amount}
+                  onChange={(e) => setEditCitation({...editCitation, fine_amount: parseFloat(e.target.value)})}
+                  className="police-input"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="editDate">تاريخ المخالفة *</Label>
+                <div className="relative">
+                  <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="editDate"
+                    type="date"
+                    value={editCitation.date}
+                    onChange={(e) => setEditCitation({...editCitation, date: e.target.value})}
+                    className="police-input pr-10"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="editLocation">الموقع</Label>
+              <Input
+                id="editLocation"
+                placeholder="أدخل موقع المخالفة..."
+                value={editCitation.location}
+                onChange={(e) => setEditCitation({...editCitation, location: e.target.value})}
+                className="police-input"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="editPaid">الحالة</Label>
+              <Select 
+                value={editCitation.paid ? "true" : "false"} 
+                onValueChange={(value) => setEditCitation({...editCitation, paid: value === "true"})}
+              >
+                <SelectTrigger id="editPaid" className="police-input">
+                  <SelectValue placeholder="اختر حالة الدفع" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="false">غير مدفوعة</SelectItem>
+                  <SelectItem value="true">مدفوعة</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              إلغاء
+            </Button>
+            <Button className="police-button" onClick={handleEditCitation}>
+              حفظ التغييرات
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من رغبتك في حذف هذه المخالفة؟ هذا الإجراء لا يمكن التراجع عنه.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteCitation} className="bg-red-600 hover:bg-red-700">
+              حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

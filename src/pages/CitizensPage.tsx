@@ -45,7 +45,7 @@ const CitizensPage = () => {
     gender: '',
     address: '',
     phone: '',
-    license_status: 'valid' as 'valid' | 'none' | 'suspended' | 'revoked',
+    license_status: 'valid' as 'valid' | 'suspended' | 'revoked' | 'none',
   });
   
   // Fetch citizens from Supabase
@@ -71,7 +71,7 @@ const CitizensPage = () => {
           address: citizen.address || '',
           phone: citizen.phone || '',
           image_url: citizen.image_url,
-          license_status: citizen.license_status || 'none',
+          license_status: citizen.license_status as 'valid' | 'suspended' | 'revoked' | 'none' || 'none',
           created_at: citizen.created_at,
         }));
         
@@ -168,7 +168,7 @@ const CitizensPage = () => {
           gender: data[0].gender,
           address: data[0].address || '',
           phone: data[0].phone || '',
-          license_status: data[0].license_status || 'none',
+          license_status: data[0].license_status as 'valid' | 'suspended' | 'revoked' | 'none',
           created_at: data[0].created_at,
         };
         
@@ -185,7 +185,7 @@ const CitizensPage = () => {
         gender: '',
         address: '',
         phone: '',
-        license_status: 'valid' as 'valid' | 'none' | 'suspended' | 'revoked',
+        license_status: 'valid' as 'valid' | 'suspended' | 'revoked' | 'none',
       });
       
       toast({

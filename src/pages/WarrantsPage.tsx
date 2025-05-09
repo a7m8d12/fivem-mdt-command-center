@@ -92,11 +92,11 @@ const WarrantsPage = () => {
           citizen_id: w.citizen_id,
           citizen_name: w.citizens ? `${w.citizens.first_name} ${w.citizens.last_name}` : 'مواطن غير معروف',
           reason: w.reason,
-          status: w.status || 'active',
+          status: w.status as 'active' | 'executed' | 'expired' || 'active',
           issue_date: w.issue_date,
           expiry_date: w.expiry_date,
           issuing_officer_id: w.issuing_officer_id,
-          issuing_officer_name: w.profiles?.name || 'ضابط غير معروف',
+          issuing_officer_name: (w.profiles && w.profiles.name) ? w.profiles.name : 'ضابط غير معروف',
           created_at: w.created_at
         }));
         

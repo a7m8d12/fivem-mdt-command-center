@@ -17,8 +17,6 @@ const LoginPage = () => {
     isAuthenticated
   } = useAuth();
   const location = useLocation();
-
-  // Removed the pre-filled credentials
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
