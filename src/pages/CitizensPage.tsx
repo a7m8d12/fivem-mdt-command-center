@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,7 +37,7 @@ const CitizensPage = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  // New citizen form state
+  // New citizen form state with properly typed license_status
   const [newCitizen, setNewCitizen] = useState({
     first_name: '',
     last_name: '',
@@ -46,7 +45,7 @@ const CitizensPage = () => {
     gender: '',
     address: '',
     phone: '',
-    license_status: 'valid',
+    license_status: 'valid' as 'valid' | 'none' | 'suspended' | 'revoked',
   });
   
   // Fetch citizens from Supabase
@@ -178,7 +177,7 @@ const CitizensPage = () => {
       
       setIsAddDialogOpen(false);
       
-      // Reset form
+      // Reset form with proper typing
       setNewCitizen({
         first_name: '',
         last_name: '',
@@ -186,7 +185,7 @@ const CitizensPage = () => {
         gender: '',
         address: '',
         phone: '',
-        license_status: 'valid',
+        license_status: 'valid' as 'valid' | 'none' | 'suspended' | 'revoked',
       });
       
       toast({
@@ -878,4 +877,3 @@ const CitizenDetailsTabs = ({
 };
 
 export default CitizensPage;
-

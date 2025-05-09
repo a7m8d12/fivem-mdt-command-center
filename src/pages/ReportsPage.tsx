@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +8,9 @@ import {
   Plus,
   FileText,
   Filter,
-  Download
+  Download,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -18,6 +20,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 
 interface Report {
   id: string;
@@ -30,67 +44,87 @@ interface Report {
   created_at: string;
 }
 
-// Mock reports data
-const mockReports: Report[] = [
-  {
-    id: '1',
-    report_number: 'AR-2023-001',
-    title: 'اعتقال - قيادة تحت تأثير المخدرات',
-    type: 'arrest',
-    officer_name: 'فهد العنزي',
-    status: 'closed',
-    date: '2023-07-22T16:45:00.000Z',
-    created_at: '2023-07-22T18:30:00.000Z',
-  },
-  {
-    id: '2',
-    report_number: 'IR-2023-042',
-    title: 'حادث مروري - طريق الملك فهد',
-    type: 'incident',
-    officer_name: 'محمد العلي',
-    status: 'open',
-    date: '2023-08-15T09:20:00.000Z',
-    created_at: '2023-08-15T10:30:00.000Z',
-  },
-  {
-    id: '3',
-    report_number: 'INV-2023-018',
-    title: 'تحقيق في سرقة مركبة',
-    type: 'investigation',
-    officer_name: 'عبدالله خالد',
-    status: 'pending',
-    date: '2023-08-03T14:10:00.000Z',
-    created_at: '2023-08-03T15:45:00.000Z',
-  },
-  {
-    id: '4',
-    report_number: 'TR-2023-076',
-    title: 'مخالفة مرورية - تجاوز الإشارة الحمراء',
-    type: 'traffic',
-    officer_name: 'خالد العبيد',
-    status: 'closed',
-    date: '2023-08-10T11:30:00.000Z',
-    created_at: '2023-08-10T12:15:00.000Z',
-  },
-  {
-    id: '5',
-    report_number: 'AR-2023-002',
-    title: 'اعتقال - حيازة ممنوعات',
-    type: 'arrest',
-    officer_name: 'فهد العنزي',
-    status: 'open',
-    date: '2023-08-18T13:40:00.000Z',
-    created_at: '2023-08-18T14:50:00.000Z',
-  },
-];
-
 const ReportsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [reports, setReports] = useState<Report[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const navigate = useNavigate();
 
-  const filteredReports = mockReports
+  // Fetch reports from Supabase
+  useEffect(() => {
+    const fetchReports = async () => {
+      setIsLoading(true);
+      try {
+        // For this example, we'll still use mock data since reports table might not exist yet
+        // In a real implementation, this would fetch from Supabase
+        setReports([
+          {
+            id: '1',
+            report_number: 'AR-2023-001',
+            title: 'اعتقال - قيادة تحت تأثير المخدرات',
+            type: 'arrest',
+            officer_name: 'فهد العنزي',
+            status: 'closed',
+            date: '2023-07-22T16:45:00.000Z',
+            created_at: '2023-07-22T18:30:00.000Z',
+          },
+          {
+            id: '2',
+            report_number: 'IR-2023-042',
+            title: 'حادث مروري - طريق الملك فهد',
+            type: 'incident',
+            officer_name: 'محمد العلي',
+            status: 'open',
+            date: '2023-08-15T09:20:00.000Z',
+            created_at: '2023-08-15T10:30:00.000Z',
+          },
+          {
+            id: '3',
+            report_number: 'INV-2023-018',
+            title: 'تحقيق في سرقة مركبة',
+            type: 'investigation',
+            officer_name: 'عبدالله خالد',
+            status: 'pending',
+            date: '2023-08-03T14:10:00.000Z',
+            created_at: '2023-08-03T15:45:00.000Z',
+          },
+          {
+            id: '4',
+            report_number: 'TR-2023-076',
+            title: 'مخالفة مرورية - تجاوز الإشارة الحمراء',
+            type: 'traffic',
+            officer_name: 'خالد العبيد',
+            status: 'closed',
+            date: '2023-08-10T11:30:00.000Z',
+            created_at: '2023-08-10T12:15:00.000Z',
+          },
+          {
+            id: '5',
+            report_number: 'AR-2023-002',
+            title: 'اعتقال - حيازة ممنوعات',
+            type: 'arrest',
+            officer_name: 'فهد العنزي',
+            status: 'open',
+            date: '2023-08-18T13:40:00.000Z',
+            created_at: '2023-08-18T14:50:00.000Z',
+          },
+        ]);
+      } catch (error) {
+        console.error('Error fetching reports:', error);
+        toast.error('حدث خطأ أثناء جلب البيانات');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchReports();
+  }, []);
+
+  const filteredReports = reports
     .filter((report) => 
       (searchQuery === '' || 
         report.title.includes(searchQuery) ||
@@ -128,6 +162,30 @@ const ReportsPage = () => {
         return <Badge className="badge-yellow">قيد المتابعة</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+  
+  const handleEditClick = (reportId: string) => {
+    navigate(`/reports/edit/${reportId}`);
+  };
+  
+  const handleDeleteClick = (reportId: string) => {
+    setSelectedReportId(reportId);
+    setIsDeleteDialogOpen(true);
+  };
+  
+  const handleDeleteReport = async () => {
+    if (!selectedReportId) return;
+    
+    try {
+      // In a real implementation, this would delete from Supabase
+      // Since we're using mock data for now, just remove from local state
+      setReports(reports.filter(report => report.id !== selectedReportId));
+      setIsDeleteDialogOpen(false);
+      toast.success('تم حذف التقرير بنجاح');
+    } catch (error) {
+      console.error('Error deleting report:', error);
+      toast.error('حدث خطأ أثناء حذف التقرير');
     }
   };
 
@@ -199,26 +257,41 @@ const ReportsPage = () => {
               <th className="w-1/6">الضابط</th>
               <th className="w-1/6">التاريخ</th>
               <th className="w-1/6">الحالة</th>
-              <th className="w-1/12"></th>
+              <th className="w-1/6">الإجراءات</th>
             </tr>
           </thead>
           <tbody>
-            {filteredReports.map((report) => (
-              <tr key={report.id} className="cursor-pointer" onClick={() => navigate(`/reports/${report.id}`)}>
-                <td className="font-medium">{report.report_number}</td>
-                <td>{report.title}</td>
-                <td>{getTypeBadge(report.type)}</td>
-                <td>{report.officer_name}</td>
-                <td>{formatDate(report.date)}</td>
-                <td>{getStatusBadge(report.status)}</td>
-                <td>
-                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                    <Download className="h-4 w-4" />
-                  </Button>
+            {isLoading ? (
+              <tr>
+                <td colSpan={7} className="text-center py-4 text-muted-foreground">
+                  جاري تحميل البيانات...
                 </td>
               </tr>
-            ))}
-            {filteredReports.length === 0 && (
+            ) : filteredReports.length > 0 ? (
+              filteredReports.map((report) => (
+                <tr key={report.id}>
+                  <td className="font-medium">{report.report_number}</td>
+                  <td>{report.title}</td>
+                  <td>{getTypeBadge(report.type)}</td>
+                  <td>{report.officer_name}</td>
+                  <td>{formatDate(report.date)}</td>
+                  <td>{getStatusBadge(report.status)}</td>
+                  <td>
+                    <div className="flex space-x-2 rtl:space-x-reverse">
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/reports/${report.id}`)}>
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleEditClick(report.id)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteClick(report.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
               <tr>
                 <td colSpan={7} className="text-center py-4 text-muted-foreground">
                   لا توجد تقارير مطابقة للبحث
@@ -228,6 +301,24 @@ const ReportsPage = () => {
           </tbody>
         </table>
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من رغبتك في حذف هذا التقرير؟ هذا الإجراء لا يمكن التراجع عنه.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteReport} className="bg-red-600 hover:bg-red-700">
+              حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -72,6 +72,7 @@ export interface ArrestReport {
 export interface Warrant {
   id: string;
   citizen_id: string;
+  citizen_name: string;
   reason: string;
   status: 'active' | 'executed' | 'expired';
   issue_date: string;

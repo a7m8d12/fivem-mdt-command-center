@@ -7,7 +7,11 @@ import {
   Search, 
   Plus,
   AlertTriangle,
-  Calendar
+  Calendar,
+  Pencil,
+  Trash2,
+  Check,
+  X
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -15,64 +19,36 @@ import {
   DialogHeader, 
   DialogTitle,
   DialogFooter,
-  DialogTrigger
+  DialogTrigger,
+  DialogDescription
 } from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-// Mock data for warrants
-const mockWarrants = [
-  {
-    id: '1',
-    citizen_name: 'أحمد السالم',
-    citizen_id: '1',
-    reason: 'عدم الظهور في المحكمة',
-    status: 'active',
-    issue_date: '2025-04-20',
-    expiry_date: '2025-07-20',
-    issuing_officer_name: 'فهد العنزي',
-    issuing_officer_id: '1',
-  },
-  {
-    id: '2',
-    citizen_name: 'خالد المحمد',
-    citizen_id: '3',
-    reason: 'عدم دفع غرامات مرورية متراكمة',
-    status: 'active',
-    issue_date: '2025-04-25',
-    expiry_date: '2025-07-25',
-    issuing_officer_name: 'عبدالله خالد',
-    issuing_officer_id: '2',
-  },
-  {
-    id: '3',
-    citizen_name: 'سارة العتيبي',
-    citizen_id: '2',
-    reason: 'مخالفة شروط الإفراج المشروط',
-    status: 'expired',
-    issue_date: '2025-01-10',
-    expiry_date: '2025-04-10',
-    issuing_officer_name: 'فهد العنزي',
-    issuing_officer_id: '1',
-  }
-];
-
-// Mock citizens data
-const mockCitizens = [
-  { id: '1', name: 'أحمد السالم' },
-  { id: '2', name: 'سارة العتيبي' },
-  { id: '3', name: 'خالد المحمد' },
-  { id: '4', name: 'منى الحربي' },
-  { id: '5', name: 'عبدالله القحطاني' },
-];
+import { supabase } from "@/integrations/supabase/client";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import { Warrant } from '@/types';
 
 const WarrantsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [warrants, setWarrants] = useState(mockWarrants);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [warrants, setWarrants] = useState<Warrant[]>([]);
+  const [citizens, setCitizens] = useState<any[]>([]);
+  const [selectedWarrant, setSelectedWarrant] = useState<Warrant | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
   
   // New warrant form state
@@ -81,7 +57,72 @@ const WarrantsPage = () => {
     reason: '',
     issue_date: new Date().toISOString().split('T')[0],
     expiry_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 90 days from now
+    status: 'active' as 'active' | 'executed' | 'expired'
   });
+  
+  // Edit warrant form state
+  const [editWarrant, setEditWarrant] = useState({
+    id: '',
+    citizen_id: '',
+    reason: '',
+    issue_date: '',
+    expiry_date: '',
+    status: 'active' as 'active' | 'executed' | 'expired'
+  });
+
+  // Fetch warrants and citizens from Supabase
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch warrants with citizen information
+        const { data: warrantsData, error: warrantsError } = await supabase
+          .from('warrants')
+          .select(`
+            *,
+            citizens (first_name, last_name),
+            profiles:issuing_officer_id (name)
+          `);
+          
+        if (warrantsError) throw warrantsError;
+        
+        // Transform data to match Warrant type
+        const transformedWarrants: Warrant[] = warrantsData.map((w: any) => ({
+          id: w.id,
+          citizen_id: w.citizen_id,
+          citizen_name: w.citizens ? `${w.citizens.first_name} ${w.citizens.last_name}` : 'مواطن غير معروف',
+          reason: w.reason,
+          status: w.status || 'active',
+          issue_date: w.issue_date,
+          expiry_date: w.expiry_date,
+          issuing_officer_id: w.issuing_officer_id,
+          issuing_officer_name: w.profiles?.name || 'ضابط غير معروف',
+          created_at: w.created_at
+        }));
+        
+        setWarrants(transformedWarrants);
+        
+        // Fetch citizens for dropdown
+        const { data: citizensData, error: citizensError } = await supabase
+          .from('citizens')
+          .select('id, first_name, last_name');
+          
+        if (citizensError) throw citizensError;
+        
+        setCitizens(citizensData.map((c: any) => ({
+          id: c.id,
+          name: `${c.first_name} ${c.last_name}`
+        })));
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast.error('فشل في جلب البيانات');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
 
   // Filter warrants based on search query
   const filteredWarrants = searchQuery
@@ -102,7 +143,7 @@ const WarrantsPage = () => {
     }
   };
 
-  const handleAddWarrant = () => {
+  const handleAddWarrant = async () => {
     // Validate input
     if (!newWarrant.citizen_id) {
       toast.error("الرجاء اختيار مواطن");
@@ -113,35 +154,137 @@ const WarrantsPage = () => {
       toast.error("الرجاء إدخال سبب أمر التوقيف");
       return;
     }
-
-    // Find citizen name
-    const citizen = mockCitizens.find(c => c.id === newWarrant.citizen_id);
     
-    // Add new warrant
-    const newWarrantComplete = {
-      id: (warrants.length + 1).toString(),
-      citizen_name: citizen ? citizen.name : 'مواطن غير معروف',
-      citizen_id: newWarrant.citizen_id,
-      reason: newWarrant.reason,
-      status: 'active',
-      issue_date: newWarrant.issue_date,
-      expiry_date: newWarrant.expiry_date,
-      issuing_officer_name: user?.name || 'ضابط غير معروف',
-      issuing_officer_id: user?.id || '0',
-    };
-    
-    setWarrants([newWarrantComplete, ...warrants]);
-    setIsAddDialogOpen(false);
-    
-    // Reset form
-    setNewWarrant({
-      citizen_id: '',
-      reason: '',
-      issue_date: new Date().toISOString().split('T')[0],
-      expiry_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    try {
+      // Add warrant to Supabase
+      const { data, error } = await supabase
+        .from('warrants')
+        .insert({
+          citizen_id: newWarrant.citizen_id,
+          reason: newWarrant.reason,
+          issue_date: newWarrant.issue_date,
+          expiry_date: newWarrant.expiry_date,
+          status: newWarrant.status,
+          issuing_officer_id: user?.id || '00000000-0000-0000-0000-000000000000'
+        })
+        .select(`
+          *,
+          citizens (first_name, last_name),
+          profiles:issuing_officer_id (name)
+        `);
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        // Add to local state
+        const newWarrantData: Warrant = {
+          id: data[0].id,
+          citizen_id: data[0].citizen_id,
+          citizen_name: data[0].citizens ? `${data[0].citizens.first_name} ${data[0].citizens.last_name}` : 'مواطن غير معروف',
+          reason: data[0].reason,
+          status: data[0].status || 'active',
+          issue_date: data[0].issue_date,
+          expiry_date: data[0].expiry_date,
+          issuing_officer_id: data[0].issuing_officer_id,
+          issuing_officer_name: data[0].profiles?.name || 'ضابط غير معروف',
+          created_at: data[0].created_at
+        };
+        
+        setWarrants([newWarrantData, ...warrants]);
+      }
+      
+      setIsAddDialogOpen(false);
+      
+      // Reset form
+      setNewWarrant({
+        citizen_id: '',
+        reason: '',
+        issue_date: new Date().toISOString().split('T')[0],
+        expiry_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'active' as 'active' | 'executed' | 'expired'
+      });
+      
+      toast.success("تم إضافة أمر التوقيف بنجاح");
+    } catch (error) {
+      console.error('Error adding warrant:', error);
+      toast.error("فشل في إضافة أمر التوقيف");
+    }
+  };
+  
+  const handleEditClick = (warrant: Warrant) => {
+    setSelectedWarrant(warrant);
+    setEditWarrant({
+      id: warrant.id,
+      citizen_id: warrant.citizen_id,
+      reason: warrant.reason,
+      issue_date: warrant.issue_date,
+      expiry_date: warrant.expiry_date,
+      status: warrant.status as 'active' | 'executed' | 'expired'
     });
+    setIsEditDialogOpen(true);
+  };
+  
+  const handleDeleteClick = (warrant: Warrant) => {
+    setSelectedWarrant(warrant);
+    setIsDeleteDialogOpen(true);
+  };
+  
+  const handleEditWarrant = async () => {
+    try {
+      const { error } = await supabase
+        .from('warrants')
+        .update({
+          reason: editWarrant.reason,
+          issue_date: editWarrant.issue_date,
+          expiry_date: editWarrant.expiry_date,
+          status: editWarrant.status
+        })
+        .eq('id', editWarrant.id);
+      
+      if (error) throw error;
+      
+      // Update in local state
+      setWarrants(warrants.map(w => {
+        if (w.id === editWarrant.id) {
+          return {
+            ...w,
+            reason: editWarrant.reason,
+            issue_date: editWarrant.issue_date,
+            expiry_date: editWarrant.expiry_date,
+            status: editWarrant.status
+          };
+        }
+        return w;
+      }));
+      
+      setIsEditDialogOpen(false);
+      toast.success("تم تحديث أمر التوقيف بنجاح");
+    } catch (error) {
+      console.error('Error updating warrant:', error);
+      toast.error("فشل في تحديث أمر التوقيف");
+    }
+  };
+  
+  const handleDeleteWarrant = async () => {
+    if (!selectedWarrant) return;
     
-    toast.success("تم إضافة أمر التوقيف بنجاح");
+    try {
+      const { error } = await supabase
+        .from('warrants')
+        .delete()
+        .eq('id', selectedWarrant.id);
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setWarrants(warrants.filter(w => w.id !== selectedWarrant.id));
+      
+      setIsDeleteDialogOpen(false);
+      toast.success("تم حذف أمر التوقيف بنجاح");
+    } catch (error) {
+      console.error('Error deleting warrant:', error);
+      toast.error("فشل في حذف أمر التوقيف");
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -182,22 +325,40 @@ const WarrantsPage = () => {
               <th>تاريخ الانتهاء</th>
               <th>الضابط المسؤول</th>
               <th>الحالة</th>
+              <th>الإجراءات</th>
             </tr>
           </thead>
           <tbody>
-            {filteredWarrants.map((warrant) => (
-              <tr key={warrant.id} className="cursor-pointer">
-                <td className="font-medium">{warrant.citizen_name}</td>
-                <td>{warrant.reason}</td>
-                <td>{formatDate(warrant.issue_date)}</td>
-                <td>{formatDate(warrant.expiry_date)}</td>
-                <td>{warrant.issuing_officer_name}</td>
-                <td>{getStatusBadge(warrant.status)}</td>
-              </tr>
-            ))}
-            {filteredWarrants.length === 0 && (
+            {isLoading ? (
               <tr>
-                <td colSpan={6} className="text-center py-4 text-muted-foreground">
+                <td colSpan={7} className="text-center py-4 text-muted-foreground">
+                  جاري تحميل البيانات...
+                </td>
+              </tr>
+            ) : filteredWarrants.length > 0 ? (
+              filteredWarrants.map((warrant) => (
+                <tr key={warrant.id}>
+                  <td className="font-medium">{warrant.citizen_name}</td>
+                  <td>{warrant.reason}</td>
+                  <td>{formatDate(warrant.issue_date)}</td>
+                  <td>{formatDate(warrant.expiry_date)}</td>
+                  <td>{warrant.issuing_officer_name}</td>
+                  <td>{getStatusBadge(warrant.status)}</td>
+                  <td>
+                    <div className="flex space-x-2 rtl:space-x-reverse">
+                      <Button variant="ghost" size="sm" onClick={() => handleEditClick(warrant)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteClick(warrant)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={7} className="text-center py-4 text-muted-foreground">
                   لا توجد أوامر توقيف مطابقة للبحث
                 </td>
               </tr>
@@ -224,7 +385,7 @@ const WarrantsPage = () => {
                   <SelectValue placeholder="اختر المواطن" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockCitizens.map((citizen) => (
+                  {citizens.map((citizen) => (
                     <SelectItem key={citizen.id} value={citizen.id}>
                       {citizen.name}
                     </SelectItem>
@@ -273,6 +434,23 @@ const WarrantsPage = () => {
                 className="police-input min-h-[100px]"
               />
             </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="status">الحالة</Label>
+              <Select 
+                value={newWarrant.status} 
+                onValueChange={(value: 'active' | 'executed' | 'expired') => setNewWarrant({...newWarrant, status: value})}
+              >
+                <SelectTrigger id="status" className="police-input">
+                  <SelectValue placeholder="اختر الحالة" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">نشط</SelectItem>
+                  <SelectItem value="executed">تم تنفيذه</SelectItem>
+                  <SelectItem value="expired">منتهي</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           
           <DialogFooter>
@@ -285,6 +463,102 @@ const WarrantsPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      {/* Edit Warrant Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl">تعديل أمر التوقيف</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editIssueDate">تاريخ الإصدار *</Label>
+                <div className="relative">
+                  <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="editIssueDate"
+                    type="date"
+                    value={editWarrant.issue_date}
+                    onChange={(e) => setEditWarrant({...editWarrant, issue_date: e.target.value})}
+                    className="police-input pr-10"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="editExpiryDate">تاريخ الانتهاء *</Label>
+                <div className="relative">
+                  <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="editExpiryDate"
+                    type="date"
+                    value={editWarrant.expiry_date}
+                    onChange={(e) => setEditWarrant({...editWarrant, expiry_date: e.target.value})}
+                    className="police-input pr-10"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="editReason">سبب أمر التوقيف *</Label>
+              <Textarea
+                id="editReason"
+                placeholder="أدخل سبب أمر التوقيف..."
+                value={editWarrant.reason}
+                onChange={(e) => setEditWarrant({...editWarrant, reason: e.target.value})}
+                className="police-input min-h-[100px]"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="editStatus">الحالة</Label>
+              <Select 
+                value={editWarrant.status} 
+                onValueChange={(value: 'active' | 'executed' | 'expired') => setEditWarrant({...editWarrant, status: value})}
+              >
+                <SelectTrigger id="editStatus" className="police-input">
+                  <SelectValue placeholder="اختر الحالة" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">نشط</SelectItem>
+                  <SelectItem value="executed">تم تنفيذه</SelectItem>
+                  <SelectItem value="expired">منتهي</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              إلغاء
+            </Button>
+            <Button className="police-button" onClick={handleEditWarrant}>
+              حفظ التغييرات
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من رغبتك في حذف أمر التوقيف؟ هذا الإجراء لا يمكن التراجع عنه.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteWarrant} className="bg-red-600 hover:bg-red-700">
+              حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
