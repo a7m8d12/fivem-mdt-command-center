@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -21,82 +21,15 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-
-// Mock data for criminal records
-const mockRecords = [
-  {
-    id: '101',
-    citizen_id: '1',
-    citizen_name: 'أحمد السالم',
-    offense: 'قيادة بتهور',
-    description: 'تم ضبط المتهم يقود بسرعة 160 كم/س في منطقة سكنية',
-    date: '2023-06-12T14:30:00.000Z',
-    officer_id: '1',
-    officer_name: 'فهد العنزي',
-    status: 'active',
-  },
-  {
-    id: '102',
-    citizen_id: '1',
-    citizen_name: 'أحمد السالم',
-    offense: 'مخالفة نظام المرور',
-    description: 'قطع الإشارة الحمراء وتجاوز السرعة المسموح بها',
-    date: '2023-08-03T09:15:00.000Z',
-    officer_id: '2',
-    officer_name: 'عبدالله خالد',
-    status: 'completed',
-  },
-  {
-    id: '103',
-    citizen_id: '3',
-    citizen_name: 'خالد المحمد',
-    offense: 'حيازة ممنوعات',
-    description: 'تم ضبط المتهم بحوزته مواد ممنوعة',
-    date: '2023-07-22T16:45:00.000Z',
-    officer_id: '1',
-    officer_name: 'فهد العنزي',
-    status: 'active',
-  },
-  {
-    id: '104',
-    citizen_id: '2',
-    citizen_name: 'سارة العتيبي',
-    offense: 'اخلال بالأمن العام',
-    description: 'تسببت في إزعاج عام وإثارة الفوضى',
-    date: '2023-09-10T20:30:00.000Z',
-    officer_id: '3',
-    officer_name: 'محمد السعيد',
-    status: 'dismissed',
-  },
-];
-
-// Mock citizens data
-const mockCitizens = [
-  { id: '1', name: 'أحمد السالم' },
-  { id: '2', name: 'سارة العتيبي' },
-  { id: '3', name: 'خالد المحمد' },
-  { id: '4', name: 'منى الحربي' },
-  { id: '5', name: 'عبدالله القحطاني' },
-];
-
-// Common offenses
-const commonOffenses = [
-  "قيادة بتهور",
-  "قيادة تحت تأثير المخدرات",
-  "تجاوز السرعة المسموح بها",
-  "مخالفة أنظمة المرور",
-  "حيازة مواد ممنوعة",
-  "مقاومة رجال الأمن",
-  "اخلال بالأمن العام",
-  "سرقة",
-  "اعتداء",
-  "تخريب ممتلكات عامة",
-];
+import { supabase } from "@/integrations/supabase/client";
+import { Citizen, CriminalRecord } from '@/types';
 
 const CriminalRecordsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [records, setRecords] = useState(mockRecords);
+  const [records, setRecords] = useState<CriminalRecord[]>([]);
+  const [citizens, setCitizens] = useState<Citizen[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
   
   // New record form state
@@ -105,15 +38,106 @@ const CriminalRecordsPage = () => {
     offense: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
-    status: 'active',
+    status: 'active' as 'active' | 'completed' | 'dismissed',
   });
+
+  // Fetch criminal records and citizens from Supabase
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch citizens for the dropdown
+        const { data: citizensData, error: citizensError } = await supabase
+          .from('citizens')
+          .select('id, first_name, last_name, date_of_birth');
+          
+        if (citizensError) {
+          throw citizensError;
+        }
+        
+        // Transform citizens data to match Citizen type
+        const transformedCitizens: Citizen[] = citizensData.map((citizen: any) => ({
+          id: citizen.id,
+          first_name: citizen.first_name,
+          last_name: citizen.last_name,
+          date_of_birth: citizen.date_of_birth,
+          gender: '',  // These fields aren't needed for the dropdown
+          address: '',
+          phone: '',
+          license_status: 'valid',
+          created_at: ''
+        }));
+        
+        setCitizens(transformedCitizens);
+        
+        // Fetch criminal records
+        const { data: recordsData, error: recordsError } = await supabase
+          .from('criminal_records')
+          .select(`
+            *,
+            citizens (first_name, last_name)
+          `)
+          .order('created_at', { ascending: false });
+          
+        if (recordsError) {
+          throw recordsError;
+        }
+        
+        // Separately fetch officer names since there's no relation set up
+        const officerIds = recordsData.map((record: any) => record.officer_id);
+        const uniqueOfficerIds = [...new Set(officerIds)];
+        
+        const { data: officersData, error: officersError } = await supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', uniqueOfficerIds);
+          
+        if (officersError) {
+          throw officersError;
+        }
+        
+        // Create a map of officer IDs to names
+        const officerMap = new Map();
+        officersData?.forEach((officer: any) => {
+          officerMap.set(officer.id, officer.name);
+        });
+        
+        // Transform criminal records data
+        const transformedRecords: CriminalRecord[] = recordsData.map((record: any) => ({
+          id: record.id,
+          citizen_id: record.citizen_id,
+          offense: record.offense,
+          description: record.description || '',
+          date: record.date,
+          officer_id: record.officer_id,
+          officer_name: officerMap.get(record.officer_id) || 'ضابط غير معروف',
+          status: record.status as 'active' | 'completed' | 'dismissed',
+          created_at: record.created_at,
+        }));
+        
+        setRecords(transformedRecords);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast.error('فشل في جلب البيانات');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
 
   // Filter records based on search query
   const filteredRecords = searchQuery
     ? records.filter(record => 
-        record.citizen_name.includes(searchQuery) ||
+        getCitizenName(record.citizen_id).includes(searchQuery) ||
         record.offense.includes(searchQuery))
     : records;
+
+  const getCitizenName = (citizenId: string) => {
+    const citizen = citizens.find(c => c.id === citizenId);
+    return citizen ? `${citizen.first_name} ${citizen.last_name}` : 'مواطن غير معروف';
+  };
 
   const getStatusBadge = (status: string) => {
     if (status === 'active') {
@@ -127,7 +151,7 @@ const CriminalRecordsPage = () => {
     }
   };
 
-  const handleAddRecord = () => {
+  const handleAddRecord = async () => {
     // Validate input
     if (!newRecord.citizen_id) {
       toast.error("الرجاء اختيار المواطن");
@@ -139,40 +163,85 @@ const CriminalRecordsPage = () => {
       return;
     }
 
-    // Find citizen name
-    const citizen = mockCitizens.find(c => c.id === newRecord.citizen_id);
-    
-    // Add new record
-    const newRecordComplete = {
-      id: (records.length + 1).toString(),
-      citizen_id: newRecord.citizen_id,
-      citizen_name: citizen ? citizen.name : 'مواطن غير معروف',
-      offense: newRecord.offense,
-      description: newRecord.description,
-      date: new Date(newRecord.date).toISOString(),
-      officer_id: user?.id || '0',
-      officer_name: user?.name || 'ضابط غير معروف',
-      status: newRecord.status,
-    };
-    
-    setRecords([newRecordComplete, ...records]);
-    setIsAddDialogOpen(false);
-    
-    // Reset form
-    setNewRecord({
-      citizen_id: '',
-      offense: '',
-      description: '',
-      date: new Date().toISOString().split('T')[0],
-      status: 'active',
-    });
-    
-    toast.success("تم إضافة السجل الجنائي بنجاح");
+    try {
+      // Add record to Supabase
+      const { data, error } = await supabase
+        .from('criminal_records')
+        .insert({
+          citizen_id: newRecord.citizen_id,
+          offense: newRecord.offense,
+          description: newRecord.description,
+          date: newRecord.date,
+          officer_id: user?.id || '00000000-0000-0000-0000-000000000000',
+          status: newRecord.status
+        })
+        .select();
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        // Add to local state
+        const citizen = citizens.find(c => c.id === newRecord.citizen_id);
+        const newRecordData: CriminalRecord = {
+          id: data[0].id,
+          citizen_id: data[0].citizen_id,
+          offense: data[0].offense,
+          description: data[0].description || '',
+          date: data[0].date,
+          officer_id: data[0].officer_id,
+          officer_name: user?.name || 'ضابط غير معروف',
+          status: data[0].status as 'active' | 'completed' | 'dismissed',
+          created_at: data[0].created_at
+        };
+        
+        setRecords([newRecordData, ...records]);
+        
+        // Add notification
+        await supabase.from('notifications').insert({
+          title: 'سجل جنائي جديد',
+          description: `تم إضافة سجل جنائي للمواطن ${citizen ? `${citizen.first_name} ${citizen.last_name}` : 'مواطن غير معروف'}`,
+          read: false,
+          type: 'warning',
+          created_by: user?.id,
+          related_to: data[0].id
+        });
+      }
+      
+      setIsAddDialogOpen(false);
+      
+      // Reset form
+      setNewRecord({
+        citizen_id: '',
+        offense: '',
+        description: '',
+        date: new Date().toISOString().split('T')[0],
+        status: 'active',
+      });
+      
+      toast.success("تم إضافة السجل الجنائي بنجاح");
+    } catch (error) {
+      console.error('Error adding criminal record:', error);
+      toast.error("فشل في إضافة السجل الجنائي");
+    }
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ar-SA');
   };
+
+  // Common offenses
+  const commonOffenses = [
+    "قيادة بتهور",
+    "قيادة تحت تأثير المخدرات",
+    "تجاوز السرعة المسموح بها",
+    "مخالفة أنظمة المرور",
+    "حيازة مواد ممنوعة",
+    "مقاومة رجال الأمن",
+    "اخلال بالأمن العام",
+    "سرقة",
+    "اعتداء",
+    "تخريب ممتلكات عامة",
+  ];
 
   return (
     <div className="space-y-6">
@@ -210,16 +279,23 @@ const CriminalRecordsPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredRecords.map((record) => (
-              <tr key={record.id} className="cursor-pointer">
-                <td className="font-medium">{record.citizen_name}</td>
-                <td>{record.offense}</td>
-                <td>{formatDate(record.date)}</td>
-                <td>{record.officer_name}</td>
-                <td>{getStatusBadge(record.status)}</td>
+            {isLoading ? (
+              <tr>
+                <td colSpan={5} className="text-center py-4 text-muted-foreground">
+                  جاري تحميل البيانات...
+                </td>
               </tr>
-            ))}
-            {filteredRecords.length === 0 && (
+            ) : filteredRecords.length > 0 ? (
+              filteredRecords.map((record) => (
+                <tr key={record.id} className="cursor-pointer">
+                  <td className="font-medium">{getCitizenName(record.citizen_id)}</td>
+                  <td>{record.offense}</td>
+                  <td>{formatDate(record.date)}</td>
+                  <td>{record.officer_name}</td>
+                  <td>{getStatusBadge(record.status)}</td>
+                </tr>
+              ))
+            ) : (
               <tr>
                 <td colSpan={5} className="text-center py-4 text-muted-foreground">
                   لا توجد سجلات جنائية مطابقة للبحث
@@ -248,9 +324,9 @@ const CriminalRecordsPage = () => {
                   <SelectValue placeholder="اختر المواطن" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockCitizens.map((citizen) => (
+                  {citizens.map((citizen) => (
                     <SelectItem key={citizen.id} value={citizen.id}>
-                      {citizen.name}
+                      {`${citizen.first_name} ${citizen.last_name}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -307,7 +383,7 @@ const CriminalRecordsPage = () => {
               <Label htmlFor="status">الحالة</Label>
               <Select 
                 value={newRecord.status} 
-                onValueChange={(value: string) => setNewRecord({...newRecord, status: value})}
+                onValueChange={(value: any) => setNewRecord({...newRecord, status: value})}
               >
                 <SelectTrigger id="status" className="police-input">
                   <SelectValue placeholder="اختر الحالة" />

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,8 +20,6 @@ import {
   DialogHeader, 
   DialogTitle,
   DialogFooter,
-  DialogTrigger,
-  DialogDescription
 } from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,7 +37,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import { Citation } from '@/types';
+import { Citation, Citizen } from '@/types';
+
+interface CitizenOption {
+  id: string;
+  name: string;
+}
 
 const CitationsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,7 +50,7 @@ const CitationsPage = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [citations, setCitations] = useState<Citation[]>([]);
-  const [citizens, setCitizens] = useState<any[]>([]);
+  const [citizens, setCitizens] = useState<CitizenOption[]>([]);
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
@@ -77,33 +81,65 @@ const CitationsPage = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
+        // Fetch citizens for dropdown
+        const { data: citizensData, error: citizensError } = await supabase
+          .from('citizens')
+          .select('id, first_name, last_name');
+          
+        if (citizensError) throw citizensError;
+        
+        const citizenOptions: CitizenOption[] = citizensData.map((c: any) => ({
+          id: c.id,
+          name: `${c.first_name} ${c.last_name}`
+        }));
+        
+        setCitizens(citizenOptions);
+        
         // Fetch citations
         const { data: citationsData, error: citationsError } = await supabase
           .from('citations')
-          .select(`
-            *,
-            citizens (first_name, last_name)
-          `)
+          .select('*')
           .order('created_at', { ascending: false });
           
         if (citationsError) throw citationsError;
         
-        // Separately fetch officer names from profiles
+        // Separately fetch officer names
         const officerIds = citationsData.map((citation: any) => citation.officer_id);
-        const uniqueOfficerIds = [...new Set(officerIds)];
+        const uniqueOfficerIds = [...new Set(officerIds)].filter(id => id); // Filter out any null/undefined
         
-        const { data: officersData, error: officersError } = await supabase
-          .from('profiles')
-          .select('id, name')
-          .in('id', uniqueOfficerIds);
+        let officerMap = new Map();
+        if (uniqueOfficerIds.length > 0) {
+          const { data: officersData, error: officersError } = await supabase
+            .from('profiles')
+            .select('id, name')
+            .in('id', uniqueOfficerIds);
+            
+          if (officersError) throw officersError;
           
-        if (officersError) throw officersError;
+          // Create a map of officer IDs to names
+          officersData?.forEach((officer: any) => {
+            officerMap.set(officer.id, officer.name);
+          });
+        }
         
-        // Create a map of officer IDs to names
-        const officerMap = new Map();
-        officersData?.forEach((officer: any) => {
-          officerMap.set(officer.id, officer.name);
-        });
+        // Fetch citizen data for display
+        const citizenIds = citationsData.map((citation: any) => citation.citizen_id);
+        const uniqueCitizenIds = [...new Set(citizenIds)].filter(id => id);
+        
+        let citizenMap = new Map();
+        if (uniqueCitizenIds.length > 0) {
+          const { data: citizenDetailsData, error: citizenDetailsError } = await supabase
+            .from('citizens')
+            .select('id, first_name, last_name')
+            .in('id', uniqueCitizenIds);
+            
+          if (citizenDetailsError) throw citizenDetailsError;
+          
+          // Create a map of citizen IDs to names
+          citizenDetailsData?.forEach((citizen: any) => {
+            citizenMap.set(citizen.id, `${citizen.first_name} ${citizen.last_name}`);
+          });
+        }
         
         // Transform data to match Citation type
         const transformedCitations: Citation[] = citationsData.map((c: any) => ({
@@ -120,18 +156,6 @@ const CitationsPage = () => {
         }));
         
         setCitations(transformedCitations);
-        
-        // Fetch citizens for dropdown
-        const { data: citizensData, error: citizensError } = await supabase
-          .from('citizens')
-          .select('id, first_name, last_name');
-          
-        if (citizensError) throw citizensError;
-        
-        setCitizens(citizensData.map((c: any) => ({
-          id: c.id,
-          name: `${c.first_name} ${c.last_name}`
-        })));
       } catch (error) {
         console.error('Error fetching data:', error);
         toast.error('فشل في جلب البيانات');
@@ -343,6 +367,11 @@ const CitationsPage = () => {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ar-SA');
   };
+  
+  const getCitizenName = (citizenId: string) => {
+    const citizen = citizens.find(c => c.id === citizenId);
+    return citizen ? citizen.name : 'مواطن غير معروف';
+  };
 
   return (
     <div className="space-y-6">
@@ -392,9 +421,7 @@ const CitationsPage = () => {
             ) : filteredCitations.length > 0 ? (
               filteredCitations.map((citation) => (
                 <tr key={citation.id}>
-                  <td className="font-medium">
-                    {citizens.find(c => c.id === citation.citizen_id)?.name || 'مواطن غير معروف'}
-                  </td>
+                  <td className="font-medium">{getCitizenName(citation.citizen_id)}</td>
                   <td>{citation.violation}</td>
                   <td>{citation.fine_amount} دينار عراقي</td>
                   <td>{formatDate(citation.date)}</td>

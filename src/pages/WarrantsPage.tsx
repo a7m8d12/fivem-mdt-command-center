@@ -6,7 +6,7 @@ import { AlertTriangle, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from "@/integrations/supabase/client";
-import { Warrant } from '@/types';
+import { Warrant, Citizen } from '@/types';
 
 // Import refactored components
 import WarrantsList from '@/components/warrants/WarrantsList';
@@ -41,29 +41,61 @@ const WarrantsPage = () => {
     const fetchWarrants = async () => {
       setIsLoading(true);
       try {
-        // Fetch warrants with citizen information
+        // Fetch warrants
         const { data: warrantsData, error: warrantsError } = await supabase
           .from('warrants')
-          .select(`
-            *,
-            citizens (first_name, last_name),
-            profiles:issuing_officer_id (name)
-          `)
+          .select('*')
           .order('created_at', { ascending: false });
           
         if (warrantsError) throw warrantsError;
+        
+        // Fetch citizen data
+        const citizenIds = warrantsData.map((warrant: any) => warrant.citizen_id);
+        const uniqueCitizenIds = [...new Set(citizenIds)];
+        
+        const { data: citizensData, error: citizensError } = await supabase
+          .from('citizens')
+          .select('id, first_name, last_name')
+          .in('id', uniqueCitizenIds);
+          
+        if (citizensError) throw citizensError;
+        
+        // Create a map of citizen IDs to names
+        const citizenMap = new Map();
+        citizensData?.forEach((citizen: any) => {
+          citizenMap.set(citizen.id, `${citizen.first_name} ${citizen.last_name}`);
+        });
+        
+        // Separately fetch officer data
+        const officerIds = warrantsData.map((warrant: any) => warrant.issuing_officer_id);
+        const uniqueOfficerIds = [...new Set(officerIds)].filter(id => id);
+        
+        let officerMap = new Map();
+        if (uniqueOfficerIds.length > 0) {
+          const { data: officersData, error: officersError } = await supabase
+            .from('profiles')
+            .select('id, name')
+            .in('id', uniqueOfficerIds);
+            
+          if (officersError) throw officersError;
+          
+          // Create a map of officer IDs to names
+          officersData?.forEach((officer: any) => {
+            officerMap.set(officer.id, officer.name);
+          });
+        }
         
         // Transform data to match Warrant type
         const transformedWarrants: Warrant[] = warrantsData.map((w: any) => ({
           id: w.id,
           citizen_id: w.citizen_id,
-          citizen_name: w.citizens ? `${w.citizens.first_name} ${w.citizens.last_name}` : 'مواطن غير معروف',
+          citizen_name: citizenMap.get(w.citizen_id) || 'مواطن غير معروف',
           reason: w.reason,
           status: w.status as 'active' | 'executed' | 'expired',
           issue_date: w.issue_date,
           expiry_date: w.expiry_date,
           issuing_officer_id: w.issuing_officer_id,
-          issuing_officer_name: w.profiles?.name || 'ضابط غير معروف',
+          issuing_officer_name: officerMap.get(w.issuing_officer_id) || 'ضابط غير معروف',
           created_at: w.created_at
         }));
         

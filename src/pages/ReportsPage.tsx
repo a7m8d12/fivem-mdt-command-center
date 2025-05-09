@@ -8,7 +8,6 @@ import {
   Plus,
   FileText,
   Filter,
-  Download,
   Pencil,
   Trash2
 } from 'lucide-react';
@@ -54,14 +53,14 @@ const ReportsPage = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const navigate = useNavigate();
 
-  // Fetch reports from Supabase
+  // Fetch reports from Supabase (using mock data for now)
   useEffect(() => {
     const fetchReports = async () => {
       setIsLoading(true);
       try {
-        // For this example, we'll still use mock data since reports table might not exist yet
-        // In a real implementation, this would fetch from Supabase
-        setReports([
+        // For this example, we're using mock data since there's no reports table yet
+        // In a future implementation, this would fetch from Supabase
+        const mockReports: Report[] = [
           {
             id: '1',
             report_number: 'AR-2023-001',
@@ -81,38 +80,10 @@ const ReportsPage = () => {
             status: 'open',
             date: '2023-08-15T09:20:00.000Z',
             created_at: '2023-08-15T10:30:00.000Z',
-          },
-          {
-            id: '3',
-            report_number: 'INV-2023-018',
-            title: 'تحقيق في سرقة مركبة',
-            type: 'investigation',
-            officer_name: 'عبدالله خالد',
-            status: 'pending',
-            date: '2023-08-03T14:10:00.000Z',
-            created_at: '2023-08-03T15:45:00.000Z',
-          },
-          {
-            id: '4',
-            report_number: 'TR-2023-076',
-            title: 'مخالفة مرورية - تجاوز الإشارة الحمراء',
-            type: 'traffic',
-            officer_name: 'خالد العبيد',
-            status: 'closed',
-            date: '2023-08-10T11:30:00.000Z',
-            created_at: '2023-08-10T12:15:00.000Z',
-          },
-          {
-            id: '5',
-            report_number: 'AR-2023-002',
-            title: 'اعتقال - حيازة ممنوعات',
-            type: 'arrest',
-            officer_name: 'فهد العنزي',
-            status: 'open',
-            date: '2023-08-18T13:40:00.000Z',
-            created_at: '2023-08-18T14:50:00.000Z',
-          },
-        ]);
+          }
+        ];
+        
+        setReports(mockReports);
       } catch (error) {
         console.error('Error fetching reports:', error);
         toast.error('حدث خطأ أثناء جلب البيانات');

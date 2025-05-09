@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,20 +16,12 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Search, FileText } from 'lucide-react';
+import { supabase } from "@/integrations/supabase/client";
 
 interface CitizenOption {
   id: string;
   name: string;
 }
-
-// Mock data
-const mockCitizens: CitizenOption[] = [
-  { id: '1', name: 'أحمد السالم' },
-  { id: '2', name: 'سارة العتيبي' },
-  { id: '3', name: 'خالد المحمد' },
-  { id: '4', name: 'منى الحربي' },
-  { id: '5', name: 'عبدالله القحطاني' },
-];
 
 const CreateReportPage = () => {
   const navigate = useNavigate();
@@ -41,6 +33,8 @@ const CreateReportPage = () => {
   const [location, setLocation] = useState<string>('');
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState<string>('');
+  const [citizens, setCitizens] = useState<CitizenOption[]>([]);
+  const [isLoadingCitizens, setIsLoadingCitizens] = useState(true);
   const [charges, setCharges] = useState<{ id: number; text: string; checked: boolean }[]>([
     { id: 1, text: 'قيادة بتهور', checked: false },
     { id: 2, text: 'قيادة تحت تأثير المخدرات', checked: false },
@@ -51,9 +45,37 @@ const CreateReportPage = () => {
     { id: 7, text: 'اخلال بالأمن العام', checked: false },
   ]);
 
+  // Fetch citizens from Supabase
+  useEffect(() => {
+    const fetchCitizens = async () => {
+      setIsLoadingCitizens(true);
+      try {
+        const { data, error } = await supabase
+          .from('citizens')
+          .select('id, first_name, last_name');
+          
+        if (error) throw error;
+        
+        const citizenOptions: CitizenOption[] = data.map(citizen => ({
+          id: citizen.id,
+          name: `${citizen.first_name} ${citizen.last_name}`
+        }));
+        
+        setCitizens(citizenOptions);
+      } catch (error) {
+        console.error('Error fetching citizens:', error);
+        toast.error('فشل في جلب بيانات المواطنين');
+      } finally {
+        setIsLoadingCitizens(false);
+      }
+    };
+    
+    fetchCitizens();
+  }, []);
+
   const filteredCitizens = citizenSearch
-    ? mockCitizens.filter(citizen => citizen.name.includes(citizenSearch))
-    : mockCitizens;
+    ? citizens.filter(citizen => citizen.name.includes(citizenSearch))
+    : citizens;
 
   const handleChargeChange = (id: number, checked: boolean) => {
     setCharges(charges.map(charge => 
@@ -151,9 +173,13 @@ const CreateReportPage = () => {
                     value={citizenSearch}
                     onChange={(e) => setCitizenSearch(e.target.value)}
                   />
-                  <Select value={citizenId} onValueChange={setCitizenId}>
+                  <Select 
+                    value={citizenId} 
+                    onValueChange={setCitizenId}
+                    disabled={isLoadingCitizens}
+                  >
                     <SelectTrigger id="citizen" className="police-input">
-                      <SelectValue placeholder="اختر المواطن" />
+                      <SelectValue placeholder={isLoadingCitizens ? "جاري التحميل..." : "اختر المواطن"} />
                     </SelectTrigger>
                     <SelectContent>
                       {filteredCitizens.map((citizen) => (
