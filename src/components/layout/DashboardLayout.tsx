@@ -47,7 +47,19 @@ const DashboardLayout = () => {
           
         if (error) throw error;
         
-        setNotifications(data || []);
+        // Transform data to match our Notification type
+        const transformedNotifications: Notification[] = (data || []).map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          read: item.read,
+          type: item.type as 'info' | 'warning' | 'success' | 'error',
+          related_to: item.related_to,
+          created_by: item.created_by,
+          created_at: item.created_at
+        }));
+        
+        setNotifications(transformedNotifications);
       } catch (error) {
         console.error('Error fetching notifications:', error);
       }

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -113,10 +112,10 @@ const AddCitizenDialog = ({ isOpen, onOpenChange, onAddCitizen }: AddCitizenDial
       // Create notification
       await supabase.from('notifications').insert({
         title: 'تم إضافة مواطن جديد',
-        description: `تم إضافة المواطن ${newCitizen.first_name} ${newCitizen.last_name} بواسطة ${user?.name}`,
+        description: `تم إضافة المواطن ${newCitizen.first_name} ${newCitizen.last_name}`,
         read: false,
         type: 'info',
-        created_by: user?.id,
+        created_by: user?.id
       });
       
     } catch (error) {

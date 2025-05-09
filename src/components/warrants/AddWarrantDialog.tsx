@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -93,11 +92,7 @@ const AddWarrantDialog = ({ isOpen, onOpenChange, onWarrantAdded }: AddWarrantDi
           status: newWarrant.status,
           issuing_officer_id: user?.id || '00000000-0000-0000-0000-000000000000'
         })
-        .select(`
-          *,
-          citizens (first_name, last_name),
-          profiles:issuing_officer_id (name)
-        `);
+        .select();
       
       if (error) throw error;
       
@@ -106,13 +101,13 @@ const AddWarrantDialog = ({ isOpen, onOpenChange, onWarrantAdded }: AddWarrantDi
         const newWarrantData: Warrant = {
           id: data[0].id,
           citizen_id: data[0].citizen_id,
-          citizen_name: data[0].citizens ? `${data[0].citizens.first_name} ${data[0].citizens.last_name}` : 'مواطن غير معروف',
+          citizen_name: citizenName,
           reason: data[0].reason,
           status: data[0].status as 'active' | 'executed' | 'expired',
           issue_date: data[0].issue_date,
           expiry_date: data[0].expiry_date,
           issuing_officer_id: data[0].issuing_officer_id,
-          issuing_officer_name: data[0].profiles?.name || 'ضابط غير معروف',
+          issuing_officer_name: user?.name || 'ضابط غير معروف',
           created_at: data[0].created_at
         };
         
