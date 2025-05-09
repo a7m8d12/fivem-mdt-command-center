@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from '@/components/ui/badge';
@@ -74,11 +73,25 @@ const DashboardPage = () => {
           .from('citations')
           .select(`
             *,
-            citizens (first_name, last_name),
-            profiles:officer_id (name)
+            citizens (first_name, last_name)
           `)
           .order('created_at', { ascending: false })
           .limit(5);
+          
+        // Fetch officers for citations
+        const citationOfficerIds = recentCitationsData?.map(citation => citation.officer_id) || [];
+        const uniqueCitationOfficerIds = [...new Set(citationOfficerIds)];
+        
+        const { data: citationOfficersData } = await supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', uniqueCitationOfficerIds);
+          
+        // Create a map of officer IDs to names
+        const citationOfficerMap = new Map();
+        citationOfficersData?.forEach((officer: any) => {
+          citationOfficerMap.set(officer.id, officer.name);
+        });
 
         // Format citations data
         const recentCitations = recentCitationsData?.map(citation => ({
@@ -87,7 +100,7 @@ const DashboardPage = () => {
           violation: citation.violation,
           date: new Date(citation.date).toLocaleDateString('ar-SA'),
           fine_amount: citation.fine_amount,
-          officer_name: citation.profiles?.name || 'ضابط غير معروف',
+          officer_name: citationOfficerMap.get(citation.officer_id) || 'ضابط غير معروف',
           paid: citation.paid
         })) || [];
 
@@ -96,11 +109,25 @@ const DashboardPage = () => {
           .from('warrants')
           .select(`
             *,
-            citizens (first_name, last_name),
-            profiles:issuing_officer_id (name)
+            citizens (first_name, last_name)
           `)
           .order('created_at', { ascending: false })
           .limit(5);
+          
+        // Fetch officers for warrants
+        const warrantOfficerIds = recentWarrantsData?.map(warrant => warrant.issuing_officer_id) || [];
+        const uniqueWarrantOfficerIds = [...new Set(warrantOfficerIds)];
+        
+        const { data: warrantOfficersData } = await supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', uniqueWarrantOfficerIds);
+          
+        // Create a map of officer IDs to names
+        const warrantOfficerMap = new Map();
+        warrantOfficersData?.forEach((officer: any) => {
+          warrantOfficerMap.set(officer.id, officer.name);
+        });
 
         // Format warrants data
         const recentWarrants = recentWarrantsData?.map(warrant => ({
@@ -109,7 +136,7 @@ const DashboardPage = () => {
           reason: warrant.reason,
           issue_date: new Date(warrant.issue_date).toLocaleDateString('ar-SA'),
           status: warrant.status,
-          officer_name: warrant.profiles?.name || 'ضابط غير معروف'
+          officer_name: warrantOfficerMap.get(warrant.issuing_officer_id) || 'ضابط غير معروف'
         })) || [];
 
         // Fetch recent activities (mix of different events)

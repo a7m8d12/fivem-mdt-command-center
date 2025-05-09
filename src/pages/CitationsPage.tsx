@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -78,17 +77,33 @@ const CitationsPage = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Fetch citations with citizen information
+        // Fetch citations
         const { data: citationsData, error: citationsError } = await supabase
           .from('citations')
           .select(`
             *,
-            citizens (first_name, last_name),
-            profiles:officer_id (name)
+            citizens (first_name, last_name)
           `)
           .order('created_at', { ascending: false });
           
         if (citationsError) throw citationsError;
+        
+        // Separately fetch officer names from profiles
+        const officerIds = citationsData.map((citation: any) => citation.officer_id);
+        const uniqueOfficerIds = [...new Set(officerIds)];
+        
+        const { data: officersData, error: officersError } = await supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', uniqueOfficerIds);
+          
+        if (officersError) throw officersError;
+        
+        // Create a map of officer IDs to names
+        const officerMap = new Map();
+        officersData?.forEach((officer: any) => {
+          officerMap.set(officer.id, officer.name);
+        });
         
         // Transform data to match Citation type
         const transformedCitations: Citation[] = citationsData.map((c: any) => ({
@@ -99,7 +114,7 @@ const CitationsPage = () => {
           date: c.date,
           location: c.location || '',
           officer_id: c.officer_id,
-          officer_name: c.profiles?.name || 'ضابط غير معروف',
+          officer_name: officerMap.get(c.officer_id) || 'ضابط غير معروف',
           paid: c.paid || false,
           created_at: c.created_at
         }));
@@ -165,16 +180,12 @@ const CitationsPage = () => {
           paid: newCitation.paid,
           officer_id: user?.id || '00000000-0000-0000-0000-000000000000'
         })
-        .select(`
-          *,
-          citizens (first_name, last_name),
-          profiles:officer_id (name)
-        `);
+        .select();
       
       if (error) throw error;
       
       if (data && data.length > 0) {
-        // Add to local state
+        // Add to local state with proper officer name
         const newCitationData: Citation = {
           id: data[0].id,
           citizen_id: data[0].citizen_id,
@@ -183,7 +194,7 @@ const CitationsPage = () => {
           date: data[0].date,
           location: data[0].location || '',
           officer_id: data[0].officer_id,
-          officer_name: data[0].profiles?.name || 'ضابط غير معروف',
+          officer_name: user?.name || 'ضابط غير معروف',
           paid: data[0].paid || false,
           created_at: data[0].created_at
         };
