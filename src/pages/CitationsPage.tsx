@@ -6,10 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { 
   Search, 
   Plus,
-  Filter,
+  ClipboardList,
+  Calendar,
+  MapPin,
   Pencil,
   Trash2,
-  Calendar
+  Check,
+  X
 } from 'lucide-react';
 import { 
   Dialog, 
@@ -21,9 +24,11 @@ import {
   DialogDescription
 } from "@/components/ui/dialog";
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -34,8 +39,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from "@/integrations/supabase/client";
 import { Citation } from '@/types';
 
 const CitationsPage = () => {
@@ -48,7 +51,7 @@ const CitationsPage = () => {
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
-
+  
   // New citation form state
   const [newCitation, setNewCitation] = useState({
     citizen_id: '',
@@ -58,7 +61,7 @@ const CitationsPage = () => {
     location: '',
     paid: false
   });
-
+  
   // Edit citation form state
   const [editCitation, setEditCitation] = useState({
     id: '',
@@ -70,6 +73,7 @@ const CitationsPage = () => {
     paid: false
   });
 
+  // Fetch citations and citizens from Supabase
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
@@ -95,9 +99,9 @@ const CitationsPage = () => {
           date: c.date,
           location: c.location || '',
           officer_id: c.officer_id,
-          officer_name: (c.profiles && c.profiles.name) ? c.profiles.name : 'ضابط غير معروف',
+          officer_name: c.profiles?.name || 'ضابط غير معروف',
           paid: c.paid || false,
-          created_at: c.created_at,
+          created_at: c.created_at
         }));
         
         setCitations(transformedCitations);
@@ -128,7 +132,7 @@ const CitationsPage = () => {
   const filteredCitations = searchQuery
     ? citations.filter(citation => 
         citation.violation.includes(searchQuery) ||
-        citation.location && citation.location.includes(searchQuery))
+        citation.location.includes(searchQuery))
     : citations;
 
   const handleAddCitation = async () => {
@@ -143,8 +147,8 @@ const CitationsPage = () => {
       return;
     }
     
-    if (!newCitation.fine_amount || newCitation.fine_amount <= 0) {
-      toast.error("الرجاء إدخال قيمة الغرامة بشكل صحيح");
+    if (newCitation.fine_amount <= 0) {
+      toast.error("الرجاء إدخال قيمة الغرامة");
       return;
     }
     
@@ -157,9 +161,9 @@ const CitationsPage = () => {
           violation: newCitation.violation,
           fine_amount: newCitation.fine_amount,
           date: newCitation.date,
-          location: newCitation.location || null,
-          officer_id: user?.id || '00000000-0000-0000-0000-000000000000',
-          paid: newCitation.paid
+          location: newCitation.location,
+          paid: newCitation.paid,
+          officer_id: user?.id || '00000000-0000-0000-0000-000000000000'
         })
         .select(`
           *,
@@ -170,21 +174,34 @@ const CitationsPage = () => {
       if (error) throw error;
       
       if (data && data.length > 0) {
-        const c = data[0];
+        // Add to local state
         const newCitationData: Citation = {
-          id: c.id,
-          citizen_id: c.citizen_id,
-          violation: c.violation,
-          fine_amount: c.fine_amount,
-          date: c.date,
-          location: c.location || '',
-          officer_id: c.officer_id,
-          officer_name: (c.profiles && c.profiles.name) ? c.profiles.name : 'ضابط غير معروف',
-          paid: c.paid || false,
-          created_at: c.created_at,
+          id: data[0].id,
+          citizen_id: data[0].citizen_id,
+          violation: data[0].violation,
+          fine_amount: data[0].fine_amount,
+          date: data[0].date,
+          location: data[0].location || '',
+          officer_id: data[0].officer_id,
+          officer_name: data[0].profiles?.name || 'ضابط غير معروف',
+          paid: data[0].paid || false,
+          created_at: data[0].created_at
         };
         
         setCitations([newCitationData, ...citations]);
+        
+        // Create notification about the new citation
+        const citizen = citizens.find(c => c.id === newCitation.citizen_id);
+        if (citizen) {
+          await supabase.from('notifications').insert({
+            title: 'مخالفة جديدة',
+            description: `تم تسجيل مخالفة جديدة بحق ${citizen.name}: ${newCitation.violation}`,
+            read: false,
+            type: 'info',
+            created_by: user?.id,
+            related_to: data[0].id
+          });
+        }
       }
       
       setIsAddDialogOpen(false);
@@ -214,7 +231,7 @@ const CitationsPage = () => {
       violation: citation.violation,
       fine_amount: citation.fine_amount,
       date: citation.date,
-      location: citation.location || '',
+      location: citation.location,
       paid: citation.paid
     });
     setIsEditDialogOpen(true);
@@ -233,7 +250,7 @@ const CitationsPage = () => {
           violation: editCitation.violation,
           fine_amount: editCitation.fine_amount,
           date: editCitation.date,
-          location: editCitation.location || null,
+          location: editCitation.location,
           paid: editCitation.paid
         })
         .eq('id', editCitation.id);
@@ -257,6 +274,21 @@ const CitationsPage = () => {
       
       setIsEditDialogOpen(false);
       toast.success("تم تحديث المخالفة بنجاح");
+      
+      // Add notification about updating the citation's payment status
+      if (selectedCitation && selectedCitation.paid !== editCitation.paid) {
+        const citizen = citizens.find(c => c.id === editCitation.citizen_id);
+        if (citizen) {
+          await supabase.from('notifications').insert({
+            title: 'تحديث حالة الدفع',
+            description: `تم ${editCitation.paid ? 'تسديد' : 'إلغاء تسديد'} المخالفة المسجلة بحق ${citizen.name}`,
+            read: false,
+            type: editCitation.paid ? 'success' : 'warning',
+            created_by: user?.id,
+            related_to: editCitation.id
+          });
+        }
+      }
     } catch (error) {
       console.error('Error updating citation:', error);
       toast.error("فشل في تحديث المخالفة");
@@ -279,6 +311,18 @@ const CitationsPage = () => {
       
       setIsDeleteDialogOpen(false);
       toast.success("تم حذف المخالفة بنجاح");
+      
+      // Add notification about deleting the citation
+      const citizen = citizens.find(c => c.id === selectedCitation.citizen_id);
+      if (citizen) {
+        await supabase.from('notifications').insert({
+          title: 'حذف مخالفة',
+          description: `تم حذف المخالفة المسجلة بحق ${citizen.name}`,
+          read: false,
+          type: 'error',
+          created_by: user?.id
+        });
+      }
     } catch (error) {
       console.error('Error deleting citation:', error);
       toast.error("فشل في حذف المخالفة");
@@ -289,15 +333,13 @@ const CitationsPage = () => {
     return new Date(dateString).toLocaleDateString('ar-SA');
   };
 
-  const findCitizenName = (citizenId: string) => {
-    const citizen = citizens.find(c => c.id === citizenId);
-    return citizen ? citizen.name : 'مواطن غير معروف';
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">المخالفات</h2>
+        <div className="flex items-center">
+          <ClipboardList className="ml-2 h-5 w-5 text-police-blue" />
+          <h2 className="text-2xl font-bold">المخالفات</h2>
+        </div>
         <Button className="police-button" onClick={() => setIsAddDialogOpen(true)}>
           <Plus className="ml-2 h-4 w-4" /> إضافة مخالفة
         </Button>
@@ -307,7 +349,7 @@ const CitationsPage = () => {
         <div className="relative flex-1">
           <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
-            placeholder="البحث عن مخالفة..."
+            placeholder="البحث في المخالفات..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="police-input pr-10"
@@ -339,8 +381,10 @@ const CitationsPage = () => {
             ) : filteredCitations.length > 0 ? (
               filteredCitations.map((citation) => (
                 <tr key={citation.id}>
-                  <td>{findCitizenName(citation.citizen_id)}</td>
-                  <td className="font-medium">{citation.violation}</td>
+                  <td className="font-medium">
+                    {citizens.find(c => c.id === citation.citizen_id)?.name || 'مواطن غير معروف'}
+                  </td>
+                  <td>{citation.violation}</td>
                   <td>{citation.fine_amount} دينار عراقي</td>
                   <td>{formatDate(citation.date)}</td>
                   <td>{citation.location || '-'}</td>
@@ -403,7 +447,7 @@ const CitationsPage = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="violation">المخالفة *</Label>
+              <Label htmlFor="violation">نوع المخالفة *</Label>
               <Input
                 id="violation"
                 placeholder="أدخل نوع المخالفة..."
@@ -415,11 +459,11 @@ const CitationsPage = () => {
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="fine_amount">قيمة الغرامة (بالدينار العراقي) *</Label>
+                <Label htmlFor="fineAmount">مبلغ الغرامة (دينار عراقي) *</Label>
                 <Input
-                  id="fine_amount"
+                  id="fineAmount"
                   type="number"
-                  placeholder="أدخل قيمة الغرامة..."
+                  placeholder="أدخل مبلغ الغرامة..."
                   value={newCitation.fine_amount}
                   onChange={(e) => setNewCitation({...newCitation, fine_amount: parseFloat(e.target.value)})}
                   className="police-input"
@@ -442,30 +486,28 @@ const CitationsPage = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="location">الموقع</Label>
-              <Input
-                id="location"
-                placeholder="أدخل موقع المخالفة..."
-                value={newCitation.location}
-                onChange={(e) => setNewCitation({...newCitation, location: e.target.value})}
-                className="police-input"
-              />
+              <Label htmlFor="location">موقع المخالفة</Label>
+              <div className="relative">
+                <MapPin className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="location"
+                  placeholder="أدخل موقع المخالفة..."
+                  value={newCitation.location}
+                  onChange={(e) => setNewCitation({...newCitation, location: e.target.value})}
+                  className="police-input pr-10"
+                />
+              </div>
             </div>
             
-            <div className="space-y-2">
-              <Label htmlFor="paid">الحالة</Label>
-              <Select 
-                value={newCitation.paid ? "true" : "false"} 
-                onValueChange={(value) => setNewCitation({...newCitation, paid: value === "true"})}
-              >
-                <SelectTrigger id="paid" className="police-input">
-                  <SelectValue placeholder="اختر حالة الدفع" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="false">غير مدفوعة</SelectItem>
-                  <SelectItem value="true">مدفوعة</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-center space-x-2 rtl:space-x-reverse">
+              <input
+                type="checkbox"
+                id="paid"
+                checked={newCitation.paid}
+                onChange={(e) => setNewCitation({...newCitation, paid: e.target.checked})}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="paid" className="text-sm font-normal">المخالفة مدفوعة</Label>
             </div>
           </div>
           
@@ -489,7 +531,7 @@ const CitationsPage = () => {
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="editViolation">المخالفة *</Label>
+              <Label htmlFor="editViolation">نوع المخالفة *</Label>
               <Input
                 id="editViolation"
                 placeholder="أدخل نوع المخالفة..."
@@ -501,11 +543,11 @@ const CitationsPage = () => {
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editFineAmount">قيمة الغرامة (بالدينار العراقي) *</Label>
+                <Label htmlFor="editFineAmount">مبلغ الغرامة (دينار عراقي) *</Label>
                 <Input
                   id="editFineAmount"
                   type="number"
-                  placeholder="أدخل قيمة الغرامة..."
+                  placeholder="أدخل مبلغ الغرامة..."
                   value={editCitation.fine_amount}
                   onChange={(e) => setEditCitation({...editCitation, fine_amount: parseFloat(e.target.value)})}
                   className="police-input"
@@ -528,30 +570,28 @@ const CitationsPage = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="editLocation">الموقع</Label>
-              <Input
-                id="editLocation"
-                placeholder="أدخل موقع المخالفة..."
-                value={editCitation.location}
-                onChange={(e) => setEditCitation({...editCitation, location: e.target.value})}
-                className="police-input"
-              />
+              <Label htmlFor="editLocation">موقع المخالفة</Label>
+              <div className="relative">
+                <MapPin className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foregroun" />
+                <Input
+                  id="editLocation"
+                  placeholder="أدخل موقع المخالفة..."
+                  value={editCitation.location}
+                  onChange={(e) => setEditCitation({...editCitation, location: e.target.value})}
+                  className="police-input pr-10"
+                />
+              </div>
             </div>
             
-            <div className="space-y-2">
-              <Label htmlFor="editPaid">الحالة</Label>
-              <Select 
-                value={editCitation.paid ? "true" : "false"} 
-                onValueChange={(value) => setEditCitation({...editCitation, paid: value === "true"})}
-              >
-                <SelectTrigger id="editPaid" className="police-input">
-                  <SelectValue placeholder="اختر حالة الدفع" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="false">غير مدفوعة</SelectItem>
-                  <SelectItem value="true">مدفوعة</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-center space-x-2 rtl:space-x-reverse">
+              <input
+                type="checkbox"
+                id="editPaid"
+                checked={editCitation.paid}
+                onChange={(e) => setEditCitation({...editCitation, paid: e.target.checked})}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="editPaid" className="text-sm font-normal">المخالفة مدفوعة</Label>
             </div>
           </div>
           
@@ -572,7 +612,7 @@ const CitationsPage = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
             <AlertDialogDescription>
-              هل أنت متأكد من رغبتك في حذف هذه المخالفة؟ هذا الإجراء لا يمكن التراجع عنه.
+              هل أنت متأكد من رغبتك في حذف المخالفة؟ هذا الإجراء لا يمكن التراجع عنه.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -30,29 +30,34 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Users, Shield, Loader2 } from "lucide-react";
-
-interface UserProfile {
-  id: string;
-  email: string;
-  name: string;
-  role: string;
-  badge_number: string;
-  created_at: string;
-}
+import { User } from "@/types";
 
 const AdminPage = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isDeleteUserDialogOpen, setIsDeleteUserDialogOpen] = useState(false);
+  const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [newUser, setNewUser] = useState({
     email: "",
     name: "",
     password: "",
     role: "officer" as "admin" | "officer" | "dispatch",
+    badge_number: "",
+  });
+  const [editUser, setEditUser] = useState({
+    id: "",
+    email: "",
+    name: "",
+    role: "officer" as "admin" | "officer" | "dispatch",
+    badge_number: "",
   });
   const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [isEditingUser, setIsEditingUser] = useState(false);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   // Redirect non-admin users
   useEffect(() => {
@@ -75,20 +80,29 @@ const AdminPage = () => {
 
       if (profilesError) throw profilesError;
 
-      // Get emails from auth.users (since we can't directly query auth.users)
-      const userProfiles: UserProfile[] = [];
-      
-      for (const profile of profiles) {
-        // Create a user profile with all available data
-        userProfiles.push({
+      // Get auth users (requires special RPC function to be set up in Supabase)
+      const { data: authUsers, error: authError } = await supabase
+        .rpc('get_users');
+        
+      if (authError) {
+        console.error("Auth query error:", authError);
+        // Continue with just profiles data
+      }
+
+      // Map auth users email to profiles if available
+      const userProfiles: User[] = profiles.map((profile: any) => {
+        // Try to find matching auth user
+        const authUser = authUsers?.find((au: any) => au.id === profile.id);
+        
+        return {
           id: profile.id,
-          email: profile.id, // Default placeholder
+          email: authUser?.email || profile.id,
           name: profile.name,
           role: profile.role,
           badge_number: profile.badge_number || "N/A",
           created_at: profile.created_at,
-        });
-      }
+        };
+      });
 
       setUsers(userProfiles);
     } catch (error) {
@@ -128,6 +142,7 @@ const AdminPage = () => {
           data: {
             name: newUser.name,
             role: newUser.role,
+            badge_number: newUser.badge_number || undefined
           },
         }
       });
@@ -141,6 +156,7 @@ const AdminPage = () => {
         name: "",
         password: "",
         role: "officer",
+        badge_number: "",
       });
 
       toast.success("تم إنشاء المستخدم بنجاح");
@@ -155,6 +171,88 @@ const AdminPage = () => {
     } finally {
       setIsCreatingUser(false);
     }
+  };
+  
+  const handleEditUser = async () => {
+    try {
+      setIsEditingUser(true);
+      
+      if (!editUser.name) {
+        toast.error("يرجى إدخال اسم المستخدم");
+        return;
+      }
+      
+      // Update profile
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          name: editUser.name,
+          role: editUser.role,
+          badge_number: editUser.badge_number
+        })
+        .eq("id", editUser.id);
+      
+      if (updateError) throw updateError;
+      
+      // Update local state
+      setUsers(users.map(u => 
+        u.id === editUser.id
+          ? { ...u, name: editUser.name, role: editUser.role, badge_number: editUser.badge_number }
+          : u
+      ));
+      
+      setIsEditUserDialogOpen(false);
+      toast.success("تم تحديث المستخدم بنجاح");
+    } catch (error: any) {
+      console.error("Error updating user:", error);
+      toast.error(`فشل تحديث المستخدم: ${error.message}`);
+    } finally {
+      setIsEditingUser(false);
+    }
+  };
+  
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+    
+    try {
+      setIsDeletingUser(true);
+      
+      // Delete user's profile
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .delete()
+        .eq("id", selectedUser.id);
+      
+      if (profileError) throw profileError;
+      
+      // Can't delete from auth.users table directly, but we can update the local state
+      setUsers(users.filter(u => u.id !== selectedUser.id));
+      
+      setIsDeleteUserDialogOpen(false);
+      toast.success("تم حذف المستخدم بنجاح");
+    } catch (error: any) {
+      console.error("Error deleting user:", error);
+      toast.error(`فشل حذف المستخدم: ${error.message}`);
+    } finally {
+      setIsDeletingUser(false);
+    }
+  };
+  
+  const handleEditClick = (user: User) => {
+    setSelectedUser(user);
+    setEditUser({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role as "admin" | "officer" | "dispatch",
+      badge_number: user.badge_number,
+    });
+    setIsEditUserDialogOpen(true);
+  };
+  
+  const handleDeleteClick = (user: User) => {
+    setSelectedUser(user);
+    setIsDeleteUserDialogOpen(true);
   };
 
   if (!user || !isAdmin) {
@@ -187,6 +285,7 @@ const AdminPage = () => {
                 <TableHead className="text-right">الدور</TableHead>
                 <TableHead className="text-right">رقم الشارة</TableHead>
                 <TableHead className="text-right">تاريخ الإنشاء</TableHead>
+                <TableHead className="text-right">الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,12 +304,22 @@ const AdminPage = () => {
                   <TableCell dir="ltr">
                     {new Date(user.created_at).toLocaleDateString("ar-SA")}
                   </TableCell>
+                  <TableCell>
+                    <div className="flex space-x-2 rtl:space-x-reverse">
+                      <Button variant="ghost" size="sm" onClick={() => handleEditClick(user)}>
+                        تعديل
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-red-600" onClick={() => handleDeleteClick(user)}>
+                        حذف
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
 
               {users.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     لم يتم العثور على مستخدمين
                   </TableCell>
                 </TableRow>
@@ -259,6 +368,16 @@ const AdminPage = () => {
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="badge_number">رقم الشارة</Label>
+              <Input
+                id="badge_number"
+                placeholder="أدخل رقم الشارة"
+                dir="ltr"
+                value={newUser.badge_number}
+                onChange={(e) => setNewUser({ ...newUser, badge_number: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="role">الدور</Label>
               <Select
                 value={newUser.role}
@@ -296,6 +415,129 @@ const AdminPage = () => {
                 </>
               ) : (
                 'إنشاء المستخدم'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit User Dialog */}
+      <Dialog open={isEditUserDialogOpen} onOpenChange={setIsEditUserDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-center">تعديل المستخدم</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">الاسم</Label>
+              <Input
+                id="edit-name"
+                placeholder="أدخل اسم المستخدم"
+                value={editUser.name}
+                onChange={(e) => setEditUser({ ...editUser, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">البريد الإلكتروني</Label>
+              <Input
+                id="edit-email"
+                type="email"
+                placeholder="example@domain.com"
+                dir="ltr"
+                value={editUser.email}
+                disabled
+                className="bg-muted"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-badge_number">رقم الشارة</Label>
+              <Input
+                id="edit-badge_number"
+                placeholder="أدخل رقم الشارة"
+                dir="ltr"
+                value={editUser.badge_number}
+                onChange={(e) => setEditUser({ ...editUser, badge_number: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">الدور</Label>
+              <Select
+                value={editUser.role}
+                onValueChange={(value: "admin" | "officer" | "dispatch") => 
+                  setEditUser({ ...editUser, role: value })
+                }
+              >
+                <SelectTrigger id="edit-role">
+                  <SelectValue placeholder="اختر الدور" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">مسؤول النظام</SelectItem>
+                  <SelectItem value="officer">ضابط</SelectItem>
+                  <SelectItem value="dispatch">مشغل اتصالات</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEditUserDialogOpen(false)}
+            >
+              إلغاء
+            </Button>
+            <Button 
+              className="police-button"
+              onClick={handleEditUser} 
+              disabled={isEditingUser}
+            >
+              {isEditingUser ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  جاري الحفظ...
+                </>
+              ) : (
+                'حفظ التغييرات'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete User Confirmation */}
+      <Dialog open={isDeleteUserDialogOpen} onOpenChange={setIsDeleteUserDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-center">تأكيد حذف المستخدم</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-center">
+              هل أنت متأكد من رغبتك في حذف المستخدم؟
+              <br />
+              <span className="font-bold">{selectedUser?.name}</span>
+            </p>
+            <p className="text-center text-red-500 mt-2">
+              هذا الإجراء لا يمكن التراجع عنه.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteUserDialogOpen(false)}
+            >
+              إلغاء
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteUser} 
+              disabled={isDeletingUser}
+            >
+              {isDeletingUser ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  جاري الحذف...
+                </>
+              ) : (
+                'حذف المستخدم'
               )}
             </Button>
           </DialogFooter>

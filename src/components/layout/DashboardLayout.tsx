@@ -17,43 +17,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Badge } from '@/components/ui/badge';
-
-// Mock notifications data
-const mockNotifications = [
-  {
-    id: 1,
-    title: 'تم إضافة مواطن جديد',
-    description: 'تم إضافة المواطن سعد الفهد إلى قاعدة البيانات',
-    time: 'قبل 5 دقائق',
-    read: false
-  },
-  {
-    id: 2,
-    title: 'أمر توقيف جديد',
-    description: 'تم إصدار أمر توقيف جديد بحق المواطن خالد المحمد',
-    time: 'قبل 20 دقيقة',
-    read: false
-  },
-  {
-    id: 3,
-    title: 'تحديث النظام',
-    description: 'تم تحديث النظام إلى الإصدار 1.0.1',
-    time: 'قبل 1 ساعة',
-    read: true
-  },
-  {
-    id: 4,
-    title: 'تنبيه أمني',
-    description: 'يرجى التحقق من هوية المواطنين بدقة نظراً لتزايد محاولات الانتحال',
-    time: 'قبل 3 ساعات',
-    read: true
-  }
-];
+import { supabase } from "@/integrations/supabase/client";
+import { Notification } from '@/types';
 
 const DashboardLayout = () => {
   const { user, loading, signOut, isAdmin } = useAuth();
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notificationOpen, setNotificationOpen] = useState(false);
 
   // Use useEffect for navigation to avoid React warnings
@@ -63,19 +33,107 @@ const DashboardLayout = () => {
     }
   }, [user, loading, navigate]);
 
+  // Fetch notifications
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      if (!user) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(10);
+          
+        if (error) throw error;
+        
+        setNotifications(data || []);
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
+      }
+    };
+    
+    fetchNotifications();
+    
+    // Subscribe to notifications
+    const channel = supabase
+      .channel('public:notifications')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications'
+      }, (payload) => {
+        // Add the new notification to the state
+        const newNotification = payload.new as Notification;
+        setNotifications(prev => [newNotification, ...prev].slice(0, 10));
+      })
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
   // Get unread notification count
   const unreadCount = notifications.filter(n => !n.read).length;
 
   // Mark notification as read
-  const markAsRead = (id: number) => {
-    setNotifications(prev => prev.map(n => 
-      n.id === id ? { ...n, read: true } : n
-    ));
+  const markAsRead = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      // Update local state
+      setNotifications(prev => prev.map(n => 
+        n.id === id ? { ...n, read: true } : n
+      ));
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
   // Mark all notifications as read
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markAllAsRead = async () => {
+    try {
+      const notificationIds = notifications.filter(n => !n.read).map(n => n.id);
+      
+      if (notificationIds.length === 0) return;
+      
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .in('id', notificationIds);
+        
+      if (error) throw error;
+      
+      // Update local state
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+
+  // Format notification time
+  const formatNotificationTime = (time: string) => {
+    const date = new Date(time);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) {
+      return 'قبل بضع ثوان';
+    } else if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60);
+      return `قبل ${minutes} ${minutes === 1 ? 'دقيقة' : 'دقائق'}`;
+    } else if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return `قبل ${hours} ${hours === 1 ? 'ساعة' : 'ساعات'}`;
+    } else {
+      return date.toLocaleDateString('ar-SA');
+    }
   };
 
   // Show loading state while checking authentication
@@ -137,7 +195,7 @@ const DashboardLayout = () => {
                 </div>
                 
                 <div className="max-h-[300px] overflow-y-auto">
-                  {notifications.map((notification) => (
+                  {notifications.length > 0 ? notifications.map((notification) => (
                     <div 
                       key={notification.id}
                       className={`px-4 py-3 border-b last:border-b-0 flex gap-2 ${notification.read ? '' : 'bg-secondary/30'}`}
@@ -159,13 +217,11 @@ const DashboardLayout = () => {
                           {notification.description}
                         </p>
                         <p className="text-xs text-muted-foreground mt-2">
-                          {notification.time}
+                          {formatNotificationTime(notification.created_at)}
                         </p>
                       </div>
                     </div>
-                  ))}
-                  
-                  {notifications.length === 0 && (
+                  )) : (
                     <div className="px-4 py-6 text-center text-muted-foreground">
                       لا توجد إشعارات جديدة
                     </div>

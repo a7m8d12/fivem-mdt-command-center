@@ -81,3 +81,14 @@ export interface Warrant {
   issuing_officer_name: string;
   created_at: string;
 }
+
+export interface Notification {
+  id: string;
+  title: string;
+  description: string;
+  time: string;
+  read: boolean;
+  type?: 'info' | 'warning' | 'success' | 'error';
+  related_to?: string;
+  created_at: string;
+}
