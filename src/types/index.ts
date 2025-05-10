@@ -47,6 +47,7 @@ export interface CriminalRecord {
 export interface Citation {
   id: string;
   citizen_id: string;
+  citizen_name: string; // Added this property to fix the type error
   violation: string;
   fine_amount: number;
   date: string;
