@@ -1,21 +1,33 @@
 
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertCircle, Calendar } from "lucide-react";
-import { toast } from "sonner";
-import { Warrant } from "@/types";
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle,
+  DialogFooter,
+  DialogDescription
+} from "@/components/ui/dialog";
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CalendarIcon } from 'lucide-react';
+import { format } from 'date-fns';
+import { ar } from 'date-fns/locale';
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Warrant } from '@/types';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from "@/integrations/supabase/client";
-
-interface CitizenOption {
-  id: string;
-  name: string;
-}
 
 interface AddWarrantDialogProps {
   isOpen: boolean;
@@ -24,42 +36,36 @@ interface AddWarrantDialogProps {
 }
 
 const AddWarrantDialog = ({ isOpen, onOpenChange, onWarrantAdded }: AddWarrantDialogProps) => {
-  const { user } = useAuth();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [citizens, setCitizens] = useState<CitizenOption[]>([]);
-  const [isLoadingCitizens, setIsLoadingCitizens] = useState(true);
-  
-  // Form state
-  const [warrant, setWarrant] = useState({
-    citizen_id: '',
-    reason: '',
-    issue_date: new Date().toISOString().split('T')[0],
-    expiry_date: new Date(new Date().setMonth(new Date().getMonth() + 3)).toISOString().split('T')[0],
-    status: 'active' as 'active' | 'executed' | 'expired'
+  const [citizenId, setCitizenId] = useState<string>('');
+  const [reason, setReason] = useState<string>('');
+  const [issueDate, setIssueDate] = useState<Date>(new Date());
+  const [expiryDate, setExpiryDate] = useState<Date>(() => {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() + 1);
+    return date;
   });
-
-  // Fetch citizens from Supabase
+  const [status, setStatus] = useState<'active' | 'executed' | 'expired'>('active');
+  
+  const [citizens, setCitizens] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  
+  const { user } = useAuth();
+  
+  // Fetch citizens for dropdown
   useEffect(() => {
     const fetchCitizens = async () => {
-      setIsLoadingCitizens(true);
       try {
         const { data, error } = await supabase
           .from('citizens')
-          .select('id, first_name, last_name');
+          .select('id, first_name, last_name')
+          .order('created_at', { ascending: false });
           
         if (error) throw error;
         
-        const citizenOptions: CitizenOption[] = data.map(citizen => ({
-          id: citizen.id,
-          name: `${citizen.first_name} ${citizen.last_name}`
-        }));
-        
-        setCitizens(citizenOptions);
+        setCitizens(data || []);
       } catch (error) {
         console.error('Error fetching citizens:', error);
         toast.error('فشل في جلب بيانات المواطنين');
-      } finally {
-        setIsLoadingCitizens(false);
       }
     };
     
@@ -69,172 +75,192 @@ const AddWarrantDialog = ({ isOpen, onOpenChange, onWarrantAdded }: AddWarrantDi
   }, [isOpen]);
 
   const handleSubmit = async () => {
-    // Validate input
-    if (!warrant.citizen_id) {
+    if (!citizenId) {
       toast.error("الرجاء اختيار المواطن");
       return;
     }
-    
-    if (!warrant.reason) {
-      toast.error("الرجاء إدخال سبب الإيقاف");
+
+    if (!reason) {
+      toast.error("الرجاء إدخال سبب أمر التوقيف");
       return;
     }
-    
-    const issueDate = new Date(warrant.issue_date);
-    const expiryDate = new Date(warrant.expiry_date);
-    
-    if (expiryDate <= issueDate) {
-      toast.error("يجب أن يكون تاريخ انتهاء الأمر بعد تاريخ إصداره");
+
+    if (!issueDate) {
+      toast.error("الرجاء تحديد تاريخ الإصدار");
       return;
     }
-    
-    setIsSubmitting(true);
+
+    if (!expiryDate) {
+      toast.error("الرجاء تحديد تاريخ الانتهاء");
+      return;
+    }
+
+    setIsLoading(true);
     
     try {
-      // Add warrant to Supabase
+      const issueFormattedDate = format(issueDate, 'yyyy-MM-dd');
+      const expiryFormattedDate = format(expiryDate, 'yyyy-MM-dd');
+      
+      // Insert into warrants table
       const { data, error } = await supabase
         .from('warrants')
         .insert({
-          citizen_id: warrant.citizen_id,
-          reason: warrant.reason,
-          issue_date: warrant.issue_date,
-          expiry_date: warrant.expiry_date,
-          status: warrant.status,
+          citizen_id: citizenId,
+          reason,
+          issue_date: issueFormattedDate,
+          expiry_date: expiryFormattedDate,
+          status: status as 'active' | 'executed' | 'expired',
           issuing_officer_id: user?.id
         })
         .select();
       
       if (error) throw error;
       
-      if (data && data.length > 0) {
-        // Get the citizen name
-        const citizen = citizens.find(c => c.id === warrant.citizen_id);
-        
-        // Create new warrant object for state update
-        const newWarrant: Warrant = {
-          id: data[0].id,
-          citizen_id: data[0].citizen_id,
-          citizen_name: citizen ? citizen.name : 'مواطن غير معروف',
-          reason: data[0].reason,
-          issue_date: data[0].issue_date,
-          expiry_date: data[0].expiry_date,
-          status: data[0].status as 'active' | 'executed' | 'expired', // Fix type casting here
-          issuing_officer_id: data[0].issuing_officer_id,
-          issuing_officer_name: user?.name || 'ضابط غير معروف',
-          created_at: data[0].created_at
-        };
-        
-        // Update parent component state
-        onWarrantAdded(newWarrant);
-        
-        // Add notification
-        await supabase.from('notifications').insert({
-          title: 'أمر توقيف جديد',
-          description: `تم إصدار أمر توقيف جديد بحق ${newWarrant.citizen_name}`,
-          read: false,
-          type: 'warning',
-          created_by: user?.id,
-          related_to: data[0].id
-        });
-        
-        // Reset form
-        setWarrant({
-          citizen_id: '',
-          reason: '',
-          issue_date: new Date().toISOString().split('T')[0],
-          expiry_date: new Date(new Date().setMonth(new Date().getMonth() + 3)).toISOString().split('T')[0],
-          status: 'active'
-        });
-        
-        toast.success("تم إضافة أمر التوقيف بنجاح");
-        
-        // Close dialog
-        onOpenChange(false);
-      }
+      // Find the citizen name
+      const citizen = citizens.find(c => c.id === citizenId);
+      const citizenName = citizen ? `${citizen.first_name} ${citizen.last_name}` : 'مواطن غير معروف';
+      
+      // Create the warrant object to add to the UI
+      const newWarrant: Warrant = {
+        id: data[0].id,
+        citizen_id: citizenId,
+        citizen_name: citizenName,
+        reason,
+        status: status as 'active' | 'executed' | 'expired',
+        issue_date: issueFormattedDate,
+        expiry_date: expiryFormattedDate,
+        issuing_officer_id: user?.id || '',
+        issuing_officer_name: user?.name || '',
+        created_at: new Date().toISOString()
+      };
+      
+      // Add notification
+      await supabase.from('notifications').insert({
+        title: 'إصدار أمر توقيف جديد',
+        description: `تم إصدار أمر توقيف جديد بحق المواطن ${citizenName}`,
+        read: false,
+        type: 'warning',
+        created_by: user?.id,
+        related_to: data[0].id
+      });
+      
+      onWarrantAdded(newWarrant);
+      resetForm();
+      onOpenChange(false);
+      toast.success("تم إضافة أمر التوقيف بنجاح");
     } catch (error) {
       console.error('Error adding warrant:', error);
       toast.error("فشل في إضافة أمر التوقيف");
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
 
+  const resetForm = () => {
+    setCitizenId('');
+    setReason('');
+    setIssueDate(new Date());
+    const defaultExpiry = new Date();
+    defaultExpiry.setFullYear(defaultExpiry.getFullYear() + 1);
+    setExpiryDate(defaultExpiry);
+    setStatus('active');
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[550px]">
+    <Dialog open={isOpen} onOpenChange={(value) => {
+      if (!value) resetForm();
+      onOpenChange(value);
+    }}>
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle className="text-center text-xl font-bold">إضافة أمر توقيف جديد</DialogTitle>
+          <DialogTitle className="text-center text-xl">إضافة أمر توقيف جديد</DialogTitle>
+          <DialogDescription className="text-center">أدخل معلومات أمر التوقيف</DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-6 py-4">
+        <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="citizen">المواطن المطلوب</Label>
-            <Select
-              value={warrant.citizen_id}
-              onValueChange={(value) => setWarrant({...warrant, citizen_id: value})}
-              disabled={isLoadingCitizens}
+            <Label htmlFor="citizen">المواطن *</Label>
+            <Select 
+              value={citizenId} 
+              onValueChange={setCitizenId}
             >
-              <SelectTrigger className="police-input">
-                <SelectValue placeholder={isLoadingCitizens ? "جاري التحميل..." : "اختر المواطن"} />
+              <SelectTrigger id="citizen" className="police-input">
+                <SelectValue placeholder="اختر المواطن" />
               </SelectTrigger>
               <SelectContent>
-                <SelectGroup>
-                  {citizens.map((citizen) => (
-                    <SelectItem key={citizen.id} value={citizen.id}>
-                      {citizen.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
+                {citizens.map((citizen) => (
+                  <SelectItem key={citizen.id} value={citizen.id}>
+                    {citizen.first_name} {citizen.last_name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="reason">سبب أمر التوقيف</Label>
+            <Label htmlFor="reason">سبب أمر التوقيف *</Label>
             <Textarea
               id="reason"
-              placeholder="أدخل سبب إصدار أمر التوقيف..."
-              value={warrant.reason}
-              onChange={(e) => setWarrant({...warrant, reason: e.target.value})}
+              placeholder="أدخل سبب أمر التوقيف هنا..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
               className="police-input min-h-[100px]"
             />
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="issueDate">تاريخ الإصدار</Label>
-              <div className="relative">
-                <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  type="date" 
-                  id="issueDate"
-                  value={warrant.issue_date}
-                  onChange={(e) => setWarrant({...warrant, issue_date: e.target.value})}
-                  className="police-input pr-10"
-                />
-              </div>
+              <Label>تاريخ الإصدار *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className="police-input w-full justify-start text-right"
+                  >
+                    <CalendarIcon className="ml-2 h-4 w-4" />
+                    {issueDate ? format(issueDate, 'PPP', { locale: ar }) : <span>اختر التاريخ</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={issueDate}
+                    onSelect={(date) => date && setIssueDate(date)}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="expiryDate">تاريخ الانتهاء</Label>
-              <div className="relative">
-                <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  type="date" 
-                  id="expiryDate"
-                  value={warrant.expiry_date}
-                  onChange={(e) => setWarrant({...warrant, expiry_date: e.target.value})}
-                  className="police-input pr-10"
-                />
-              </div>
+              <Label>تاريخ الانتهاء *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className="police-input w-full justify-start text-right"
+                  >
+                    <CalendarIcon className="ml-2 h-4 w-4" />
+                    {expiryDate ? format(expiryDate, 'PPP', { locale: ar }) : <span>اختر التاريخ</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={expiryDate}
+                    onSelect={(date) => date && setExpiryDate(date)}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="status">حالة أمر التوقيف</Label>
-            <Select
-              value={warrant.status}
-              onValueChange={(value: any) => setWarrant({...warrant, status: value})}
+            <Label htmlFor="status">الحالة *</Label>
+            <Select 
+              value={status} 
+              onValueChange={(value) => setStatus(value as 'active' | 'executed' | 'expired')}
             >
               <SelectTrigger id="status" className="police-input">
                 <SelectValue placeholder="اختر الحالة" />
@@ -246,27 +272,14 @@ const AddWarrantDialog = ({ isOpen, onOpenChange, onWarrantAdded }: AddWarrantDi
               </SelectContent>
             </Select>
           </div>
-          
-          <div className="flex items-center text-sm text-amber-500 bg-amber-50 p-3 rounded-lg">
-            <AlertCircle className="h-4 w-4 ml-2" />
-            <p>سيتم الإشارة إليك كضابط مسؤول عن إصدار أمر التوقيف</p>
-          </div>
         </div>
         
         <DialogFooter>
-          <Button 
-            variant="outline" 
-            onClick={() => onOpenChange(false)}
-            disabled={isSubmitting}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
             إلغاء
           </Button>
-          <Button 
-            className="police-button"
-            onClick={handleSubmit}
-            disabled={isSubmitting || isLoadingCitizens}
-          >
-            {isSubmitting ? "جاري الإضافة..." : "إضافة أمر التوقيف"}
+          <Button onClick={handleSubmit} className="police-button" disabled={isLoading}>
+            {isLoading ? "جاري الإضافة..." : "إضافة أمر التوقيف"}
           </Button>
         </DialogFooter>
       </DialogContent>

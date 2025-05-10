@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,13 +64,18 @@ const WarrantsPage = () => {
           .select('id, first_name, last_name')
           .in('id', uniqueCitizenIds);
           
-        if (citizensError) throw citizensError;
+        if (citizensError) {
+          console.error('Error fetching citizen data:', citizensError);
+          // Continue with available data
+        }
         
         // Create a map of citizen IDs to names
         const citizenMap = new Map();
-        citizensData?.forEach((citizen: any) => {
-          citizenMap.set(citizen.id, `${citizen.first_name} ${citizen.last_name}`);
-        });
+        if (citizensData) {
+          citizensData.forEach((citizen: any) => {
+            citizenMap.set(citizen.id, `${citizen.first_name} ${citizen.last_name}`);
+          });
+        }
         
         // Separately fetch officer data
         const officerIds = warrantsData.map((warrant: any) => warrant.issuing_officer_id).filter(Boolean);
@@ -77,19 +83,21 @@ const WarrantsPage = () => {
         
         let officerMap = new Map();
         if (uniqueOfficerIds.length > 0) {
-          const { data: officersData, error: officersError } = await supabase
-            .from('profiles')
-            .select('id, name')
-            .in('id', uniqueOfficerIds);
-            
-          if (officersError) {
-            console.error('Error fetching officer data:', officersError);
-            // Continue even if there's an error fetching officer data
-          } else if (officersData) {
-            // Create a map of officer IDs to names
-            officersData.forEach((officer: any) => {
-              officerMap.set(officer.id, officer.name);
-            });
+          try {
+            const { data: officersData } = await supabase
+              .from('profiles')
+              .select('id, name')
+              .in('id', uniqueOfficerIds);
+              
+            if (officersData) {
+              // Create a map of officer IDs to names
+              officersData.forEach((officer: any) => {
+                officerMap.set(officer.id, officer.name);
+              });
+            }
+          } catch (officerError) {
+            console.error('Error fetching officer data:', officerError);
+            // Continue with available data
           }
         }
         

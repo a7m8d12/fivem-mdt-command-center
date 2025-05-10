@@ -1,15 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { 
-  UserX, 
-  Car,
-  FileText,
-  ClipboardList
-} from 'lucide-react';
-import { toast } from 'sonner';
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from 'sonner';
+import { CriminalRecord, Citation, ArrestReport, Vehicle, Warrant } from '@/types';
 
 interface CitizenDetailsTabsProps {
   citizenId: string;
@@ -17,342 +12,476 @@ interface CitizenDetailsTabsProps {
 }
 
 const CitizenDetailsTabs = ({ citizenId, formatDate }: CitizenDetailsTabsProps) => {
-  const [criminalRecords, setCriminalRecords] = useState<any[]>([]);
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [citations, setCitations] = useState<any[]>([]);
-  const [arrestReports, setArrestReports] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState('criminal');
-  const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('criminal-records');
+  const [criminalRecords, setCriminalRecords] = useState<CriminalRecord[]>([]);
+  const [citations, setCitations] = useState<Citation[]>([]);
+  const [arrestReports, setArrestReports] = useState<ArrestReport[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [warrants, setWarrants] = useState<Warrant[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const loadTabData = async () => {
-      setIsLoading(true);
-      
-      if (activeTab === 'criminal') {
-        try {
-          const { data, error } = await supabase
-            .from('criminal_records')
-            .select(`
-              *,
-              profiles:officer_id (name)
-            `)
-            .eq('citizen_id', citizenId);
-            
-          if (error) {
-            throw error;
-          }
-          
-          const records = data.map((record: any) => ({
-            id: record.id,
-            citizen_id: record.citizen_id,
-            offense: record.offense,
-            description: record.description,
-            date: record.date,
-            officer_id: record.officer_id,
-            officer_name: record.profiles?.name || 'ضابط غير معروف',
-            status: record.status || 'active',
-            created_at: record.created_at,
-          }));
+    loadTabData(activeTab);
+  }, [activeTab, citizenId]);
 
-          setCriminalRecords(records);
+  const loadTabData = async (tab: string) => {
+    setIsLoading(true);
+    
+    switch (tab) {
+      case 'criminal-records':
+        try {
+          // Fetch criminal records
+          const { data: recordsData, error: recordsError } = await supabase
+            .from('criminal_records')
+            .select('*')
+            .eq('citizen_id', citizenId);
+
+          if (recordsError) throw recordsError;
+
+          if (recordsData) {
+            // Fetch officer names for each criminal record
+            const officerIds = recordsData.map((record: any) => record.officer_id).filter(Boolean);
+            const uniqueOfficerIds = [...new Set(officerIds)];
+            
+            let officerMap = new Map();
+            if (uniqueOfficerIds.length > 0) {
+              const { data: officersData } = await supabase
+                .from('profiles')
+                .select('id, name')
+                .in('id', uniqueOfficerIds);
+              
+              if (officersData) {
+                officersData.forEach((officer: any) => {
+                  officerMap.set(officer.id, officer.name);
+                });
+              }
+            }
+            
+            // Transform data
+            const transformedRecords: CriminalRecord[] = recordsData.map((record: any) => ({
+              id: record.id,
+              citizen_id: record.citizen_id,
+              offense: record.offense,
+              description: record.description || '',
+              date: record.date,
+              officer_id: record.officer_id,
+              officer_name: officerMap.get(record.officer_id) || 'ضابط غير معروف',
+              status: record.status as 'active' | 'completed' | 'dismissed',
+              created_at: record.created_at
+            }));
+            
+            setCriminalRecords(transformedRecords);
+          }
         } catch (error) {
           console.error('Error fetching criminal records:', error);
           toast.error('فشل في جلب السجلات الجنائية');
+        } finally {
+          setIsLoading(false);
         }
-      } else if (activeTab === 'vehicles') {
+        break;
+        
+      case 'citations':
         try {
-          const { data, error } = await supabase
+          // Fetch citations
+          const { data: citationsData, error: citationsError } = await supabase
+            .from('citations')
+            .select('*')
+            .eq('citizen_id', citizenId);
+            
+          if (citationsError) throw citationsError;
+
+          if (citationsData) {
+            // Fetch officer names
+            const officerIds = citationsData.map((citation: any) => citation.officer_id).filter(Boolean);
+            const uniqueOfficerIds = [...new Set(officerIds)];
+            
+            let officerMap = new Map();
+            if (uniqueOfficerIds.length > 0) {
+              const { data: officersData } = await supabase
+                .from('profiles')
+                .select('id, name')
+                .in('id', uniqueOfficerIds);
+              
+              if (officersData) {
+                officersData.forEach((officer: any) => {
+                  officerMap.set(officer.id, officer.name);
+                });
+              }
+            }
+            
+            // Get citizen name
+            const { data: citizenData } = await supabase
+              .from('citizens')
+              .select('first_name, last_name')
+              .eq('id', citizenId)
+              .single();
+            
+            const citizenName = citizenData ? `${citizenData.first_name} ${citizenData.last_name}` : 'مواطن غير معروف';
+            
+            // Transform data
+            const transformedCitations: Citation[] = citationsData.map((citation: any) => ({
+              id: citation.id,
+              citizen_id: citation.citizen_id,
+              citizen_name: citizenName,
+              violation: citation.violation,
+              fine_amount: citation.fine_amount,
+              date: citation.date,
+              location: citation.location || '',
+              officer_id: citation.officer_id,
+              officer_name: officerMap.get(citation.officer_id) || 'ضابط غير معروف',
+              paid: citation.paid || false,
+              created_at: citation.created_at
+            }));
+            
+            setCitations(transformedCitations);
+          }
+        } catch (error) {
+          console.error('Error fetching citations:', error);
+          toast.error('فشل في جلب المخالفات');
+        } finally {
+          setIsLoading(false);
+        }
+        break;
+        
+      case 'arrest-reports':
+        try {
+          // Fetch arrest reports
+          const { data: reportsData, error: reportsError } = await supabase
+            .from('arrest_reports')
+            .select('*')
+            .eq('citizen_id', citizenId);
+            
+          if (reportsError) throw reportsError;
+
+          if (reportsData) {
+            // Fetch officer names
+            const officerIds = reportsData.map((report: any) => report.officer_id).filter(Boolean);
+            const uniqueOfficerIds = [...new Set(officerIds)];
+            
+            let officerMap = new Map();
+            if (uniqueOfficerIds.length > 0) {
+              const { data: officersData } = await supabase
+                .from('profiles')
+                .select('id, name')
+                .in('id', uniqueOfficerIds);
+              
+              if (officersData) {
+                officersData.forEach((officer: any) => {
+                  officerMap.set(officer.id, officer.name);
+                });
+              }
+            }
+            
+            // Transform data
+            const transformedReports: ArrestReport[] = reportsData.map((report: any) => ({
+              id: report.id,
+              citizen_id: report.citizen_id,
+              officer_id: report.officer_id,
+              officer_name: officerMap.get(report.officer_id) || 'ضابط غير معروف',
+              charges: report.charges || [],
+              narrative: report.narrative || '',
+              arrest_date: report.arrest_date,
+              location: report.location || '',
+              created_at: report.created_at
+            }));
+            
+            setArrestReports(transformedReports);
+          }
+        } catch (error) {
+          console.error('Error fetching arrest reports:', error);
+          toast.error('فشل في جلب تقارير الاعتقال');
+        } finally {
+          setIsLoading(false);
+        }
+        break;
+        
+      case 'vehicles':
+        try {
+          // Fetch vehicles
+          const { data: vehiclesData, error: vehiclesError } = await supabase
             .from('vehicles')
             .select('*')
             .eq('citizen_id', citizenId);
             
-          if (error) {
-            throw error;
-          }
+          if (vehiclesError) throw vehiclesError;
           
-          setVehicles(data);
+          setVehicles(vehiclesData || []);
         } catch (error) {
           console.error('Error fetching vehicles:', error);
           toast.error('فشل في جلب المركبات');
+        } finally {
+          setIsLoading(false);
         }
-      } else if (activeTab === 'citations') {
+        break;
+        
+      case 'warrants':
         try {
-          const { data, error } = await supabase
-            .from('citations')
-            .select(`
-              *,
-              profiles:officer_id (name)
-            `)
+          // Fetch warrants
+          const { data: warrantsData, error: warrantsError } = await supabase
+            .from('warrants')
+            .select('*')
             .eq('citizen_id', citizenId);
             
-          if (error) {
-            throw error;
-          }
-          
-          const citationsData = data.map((citation: any) => ({
-            id: citation.id,
-            citizen_id: citation.citizen_id,
-            violation: citation.violation,
-            fine_amount: citation.fine_amount,
-            date: citation.date,
-            location: citation.location,
-            officer_id: citation.officer_id,
-            officer_name: citation.profiles?.name || 'ضابط غير معروف',
-            paid: citation.paid,
-            created_at: citation.created_at,
-          }));
+          if (warrantsError) throw warrantsError;
 
-          setCitations(citationsData);
-        } catch (error) {
-          console.error('Error fetching citations:', error);
-          toast.error('فشل في جلب المخالفات');
-        }
-      } else if (activeTab === 'reports') {
-        try {
-          const { data, error } = await supabase
-            .from('arrest_reports')
-            .select(`
-              *,
-              profiles:officer_id (name)
-            `)
-            .eq('citizen_id', citizenId);
+          if (warrantsData) {
+            // Fetch officer names
+            const officerIds = warrantsData.map((warrant: any) => warrant.issuing_officer_id).filter(Boolean);
+            const uniqueOfficerIds = [...new Set(officerIds)];
             
-          if (error) {
-            throw error;
+            let officerMap = new Map();
+            if (uniqueOfficerIds.length > 0) {
+              const { data: officersData } = await supabase
+                .from('profiles')
+                .select('id, name')
+                .in('id', uniqueOfficerIds);
+              
+              if (officersData) {
+                officersData.forEach((officer: any) => {
+                  officerMap.set(officer.id, officer.name);
+                });
+              }
+            }
+            
+            // Get citizen name
+            const { data: citizenData } = await supabase
+              .from('citizens')
+              .select('first_name, last_name')
+              .eq('id', citizenId)
+              .single();
+            
+            const citizenName = citizenData ? `${citizenData.first_name} ${citizenData.last_name}` : 'مواطن غير معروف';
+            
+            // Transform data
+            const transformedWarrants: Warrant[] = warrantsData.map((warrant: any) => ({
+              id: warrant.id,
+              citizen_id: warrant.citizen_id,
+              citizen_name: citizenName,
+              reason: warrant.reason,
+              status: warrant.status as 'active' | 'executed' | 'expired',
+              issue_date: warrant.issue_date,
+              expiry_date: warrant.expiry_date,
+              issuing_officer_id: warrant.issuing_officer_id,
+              issuing_officer_name: officerMap.get(warrant.issuing_officer_id) || 'ضابط غير معروف',
+              created_at: warrant.created_at
+            }));
+            
+            setWarrants(transformedWarrants);
           }
-          
-          const reportsData = data.map((report: any) => ({
-            id: report.id,
-            citizen_id: report.citizen_id,
-            officer_id: report.officer_id,
-            officer_name: report.profiles?.name || 'ضابط غير معروف',
-            charges: report.charges,
-            narrative: report.narrative,
-            arrest_date: report.arrest_date,
-            location: report.location,
-            created_at: report.created_at,
-          }));
-
-          setArrestReports(reportsData);
         } catch (error) {
-          console.error('Error fetching arrest reports:', error);
-          toast.error('فشل في جلب تقارير الاعتقال');
+          console.error('Error fetching warrants:', error);
+          toast.error('فشل في جلب أوامر التوقيف');
+        } finally {
+          setIsLoading(false);
         }
-      }
-      
-      setIsLoading(false);
-    };
-    
-    loadTabData();
-  }, [activeTab, citizenId]);
+        break;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <Badge className="badge-blue">نشط</Badge>;
+      case 'completed':
+        return <Badge className="badge-green">مكتمل</Badge>;
+      case 'dismissed':
+        return <Badge className="badge-yellow">مرفوض</Badge>;
+      case 'executed':
+        return <Badge className="badge-green">تم تنفيذه</Badge>;
+      case 'expired':
+        return <Badge className="badge-gray">منتهي</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
 
   return (
-    <Tabs defaultValue="criminal" onValueChange={(value) => setActiveTab(value)}>
-      <TabsList className="w-full grid grid-cols-4">
-        <TabsTrigger value="criminal" className="flex items-center">
-          <UserX className="ml-2 h-4 w-4" /> السجل الجنائي
-        </TabsTrigger>
-        <TabsTrigger value="vehicles" className="flex items-center">
-          <Car className="ml-2 h-4 w-4" /> المركبات
-        </TabsTrigger>
-        <TabsTrigger value="citations" className="flex items-center">
-          <ClipboardList className="ml-2 h-4 w-4" /> المخالفات
-        </TabsTrigger>
-        <TabsTrigger value="reports" className="flex items-center">
-          <FileText className="ml-2 h-4 w-4" /> التقارير
-        </TabsTrigger>
+    <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <TabsList className="grid grid-cols-5">
+        <TabsTrigger value="criminal-records">السجل الجنائي</TabsTrigger>
+        <TabsTrigger value="citations">المخالفات</TabsTrigger>
+        <TabsTrigger value="arrest-reports">تقارير الاعتقال</TabsTrigger>
+        <TabsTrigger value="vehicles">المركبات</TabsTrigger>
+        <TabsTrigger value="warrants">أوامر التوقيف</TabsTrigger>
       </TabsList>
       
-      <TabsContent value="criminal" className="mt-4">
+      <TabsContent value="criminal-records" className="mt-4">
         <div className="police-card p-4">
-          <h3 className="text-lg font-semibold mb-4">السجل الجنائي</h3>
-          
           {isLoading ? (
-            <div className="text-center py-6">
-              جاري تحميل البيانات...
-            </div>
+            <div className="text-center py-4">جاري تحميل البيانات...</div>
           ) : criminalRecords.length > 0 ? (
-            <div className="border border-border/50 rounded-md overflow-hidden">
-              <table className="police-table">
-                <thead>
-                  <tr>
-                    <th>المخالفة</th>
-                    <th>التاريخ</th>
-                    <th>الضابط المسؤول</th>
-                    <th>الحالة</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {criminalRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td className="font-medium">{record.offense}</td>
-                      <td>{formatDate(record.date)}</td>
-                      <td>{record.officer_name}</td>
-                      <td>
-                        {record.status === 'active' && <Badge className="badge-red">نشطة</Badge>}
-                        {record.status === 'completed' && <Badge className="badge-green">مكتملة</Badge>}
-                        {record.status === 'dismissed' && <Badge className="badge-blue">ملغاة</Badge>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-4">
+              {criminalRecords.map((record) => (
+                <div key={record.id} className="border-b border-border/50 pb-4 last:border-0 last:pb-0">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold">{record.offense}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">{record.description || 'لا يوجد وصف'}</p>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <div className="flex space-x-2 rtl:space-x-reverse mb-1">
+                        <span className="text-sm text-muted-foreground">التاريخ:</span>
+                        <span className="text-sm">{formatDate(record.date)}</span>
+                      </div>
+                      <div>{getStatusBadge(record.status)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    تم التسجيل بواسطة: {record.officer_name}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="text-center py-6 text-muted-foreground">
-              لا يوجد سجل جنائي لهذا المواطن
-            </div>
-          )}
-        </div>
-      </TabsContent>
-      
-      <TabsContent value="vehicles" className="mt-4">
-        <div className="police-card p-4">
-          <h3 className="text-lg font-semibold mb-4">المركبات</h3>
-          
-          {isLoading ? (
-            <div className="text-center py-6">
-              جاري تحميل البيانات...
-            </div>
-          ) : vehicles.length > 0 ? (
-            <div className="border border-border/50 rounded-md overflow-hidden">
-              <table className="police-table">
-                <thead>
-                  <tr>
-                    <th>رقم اللوحة</th>
-                    <th>الموديل</th>
-                    <th>اللون</th>
-                    <th>الحالة</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vehicles.map((vehicle) => (
-                    <tr key={vehicle.id}>
-                      <td className="font-medium" dir="ltr">{vehicle.plate}</td>
-                      <td>{vehicle.model}</td>
-                      <td>{vehicle.color}</td>
-                      <td>
-                        {vehicle.stolen ? (
-                          <Badge className="badge-red">مسروقة</Badge>
-                        ) : vehicle.registered ? (
-                          <Badge className="badge-green">مسجلة</Badge>
-                        ) : (
-                          <Badge className="badge-yellow">غير مسجلة</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-6 text-muted-foreground">
-              لا توجد مركبات مسجلة لهذا المواطن
-            </div>
+            <div className="text-center py-4 text-muted-foreground">لا توجد سجلات جنائية لهذا المواطن</div>
           )}
         </div>
       </TabsContent>
       
       <TabsContent value="citations" className="mt-4">
         <div className="police-card p-4">
-          <h3 className="text-lg font-semibold mb-4">المخالفات المرورية</h3>
-          
           {isLoading ? (
-            <div className="text-center py-6">
-              جاري تحميل البيانات...
-            </div>
+            <div className="text-center py-4">جاري تحميل البيانات...</div>
           ) : citations.length > 0 ? (
-            <div className="border border-border/50 rounded-md overflow-hidden">
-              <table className="police-table">
-                <thead>
-                  <tr>
-                    <th>المخالفة</th>
-                    <th>الغرامة</th>
-                    <th>التاريخ</th>
-                    <th>الضابط المسؤول</th>
-                    <th>الحالة</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {citations.map((citation) => (
-                    <tr key={citation.id}>
-                      <td className="font-medium">{citation.violation}</td>
-                      <td>{citation.fine_amount} دينار عراقي</td>
-                      <td>{formatDate(citation.date)}</td>
-                      <td>{citation.officer_name}</td>
-                      <td>
-                        {citation.paid ? (
-                          <Badge className="badge-green">مدفوعة</Badge>
-                        ) : (
-                          <Badge className="badge-red">غير مدفوعة</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-4">
+              {citations.map((citation) => (
+                <div key={citation.id} className="border-b border-border/50 pb-4 last:border-0 last:pb-0">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold">{citation.violation}</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        الموقع: {citation.location || 'غير محدد'} • المبلغ: {citation.fine_amount} ريال
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <div className="flex space-x-2 rtl:space-x-reverse mb-1">
+                        <span className="text-sm text-muted-foreground">التاريخ:</span>
+                        <span className="text-sm">{formatDate(citation.date)}</span>
+                      </div>
+                      <Badge className={citation.paid ? "badge-green" : "badge-red"}>
+                        {citation.paid ? 'تم الدفع' : 'لم يتم الدفع'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    تم التسجيل بواسطة: {citation.officer_name}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="text-center py-6 text-muted-foreground">
-              لا توجد مخالفات مرورية لهذا المواطن
-            </div>
+            <div className="text-center py-4 text-muted-foreground">لا توجد مخالفات لهذا المواطن</div>
           )}
         </div>
       </TabsContent>
       
-      <TabsContent value="reports" className="mt-4">
+      <TabsContent value="arrest-reports" className="mt-4">
         <div className="police-card p-4">
-          <h3 className="text-lg font-semibold mb-4">تقارير الاعتقال</h3>
-          
           {isLoading ? (
-            <div className="text-center py-6">
-              جاري تحميل البيانات...
-            </div>
+            <div className="text-center py-4">جاري تحميل البيانات...</div>
           ) : arrestReports.length > 0 ? (
             <div className="space-y-4">
               {arrestReports.map((report) => (
-                <div key={report.id} className="border border-border/50 rounded-md p-4">
-                  <div className="flex justify-between items-start mb-4">
+                <div key={report.id} className="border-b border-border/50 pb-4 last:border-0 last:pb-0">
+                  <div className="flex justify-between items-start">
                     <div>
-                      <h4 className="font-bold">تقرير اعتقال</h4>
-                      <p className="text-sm text-muted-foreground">
-                        بتاريخ {formatDate(report.arrest_date)} - الضابط: {report.officer_name}
-                      </p>
-                    </div>
-                    <Badge className="badge-red">اعتقال</Badge>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <h5 className="text-sm font-medium mb-1">التهم:</h5>
-                      <div className="flex flex-wrap gap-2">
-                        {report.charges && report.charges.map((charge: string, index: number) => (
-                          <Badge key={index} variant="outline">{charge}</Badge>
-                        ))}
+                      <h3 className="font-semibold">تقرير اعتقال - {formatDate(report.arrest_date)}</h3>
+                      <div className="mt-2">
+                        <p className="text-sm font-medium">التهم:</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {report.charges.map((charge, index) => (
+                            <Badge key={index} variant="outline">{charge}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <p className="text-sm font-medium">التفاصيل:</p>
+                        <p className="text-sm text-muted-foreground mt-1">{report.narrative}</p>
                       </div>
                     </div>
-                    
+                    <div className="flex flex-col items-end">
+                      <div className="flex space-x-2 rtl:space-x-reverse mb-1">
+                        <span className="text-sm text-muted-foreground">الموقع:</span>
+                        <span className="text-sm">{report.location}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    تم التسجيل بواسطة: {report.officer_name}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground">لا توجد تقارير اعتقال لهذا المواطن</div>
+          )}
+        </div>
+      </TabsContent>
+      
+      <TabsContent value="vehicles" className="mt-4">
+        <div className="police-card p-4">
+          {isLoading ? (
+            <div className="text-center py-4">جاري تحميل البيانات...</div>
+          ) : vehicles.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {vehicles.map((vehicle) => (
+                <div key={vehicle.id} className="border border-border/50 rounded-md p-4">
+                  <div className="flex justify-between items-start">
                     <div>
-                      <h5 className="text-sm font-medium mb-1">المكان:</h5>
-                      <p className="text-sm bg-secondary/50 p-2 rounded-md">
-                        {report.location}
+                      <h3 className="font-semibold">{vehicle.model}</h3>
+                      <p className="text-sm text-muted-foreground mt-1" dir="ltr">
+                        رقم اللوحة: {vehicle.plate} • اللون: {vehicle.color}
                       </p>
                     </div>
-                    
                     <div>
-                      <h5 className="text-sm font-medium mb-1">تفاصيل الاعتقال:</h5>
-                      <p className="text-sm bg-secondary/50 p-2 rounded-md whitespace-pre-line">
-                        {report.narrative}
-                      </p>
+                      {vehicle.stolen ? (
+                        <Badge className="badge-red">مسروقة</Badge>
+                      ) : !vehicle.registered ? (
+                        <Badge className="badge-yellow">غير مسجلة</Badge>
+                      ) : (
+                        <Badge className="badge-green">مسجلة</Badge>
+                      )}
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-6 text-muted-foreground">
-              لا توجد تقارير اعتقال لهذا المواطن
+            <div className="text-center py-4 text-muted-foreground">لا توجد مركبات لهذا المواطن</div>
+          )}
+        </div>
+      </TabsContent>
+      
+      <TabsContent value="warrants" className="mt-4">
+        <div className="police-card p-4">
+          {isLoading ? (
+            <div className="text-center py-4">جاري تحميل البيانات...</div>
+          ) : warrants.length > 0 ? (
+            <div className="space-y-4">
+              {warrants.map((warrant) => (
+                <div key={warrant.id} className="border-b border-border/50 pb-4 last:border-0 last:pb-0">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-semibold">أمر توقيف</h3>
+                      <p className="text-sm text-muted-foreground mt-1">{warrant.reason}</p>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <div>{getStatusBadge(warrant.status)}</div>
+                      <div className="text-sm mt-1">
+                        <span>تاريخ الإصدار: {formatDate(warrant.issue_date)}</span>
+                        <br />
+                        <span>تاريخ الانتهاء: {formatDate(warrant.expiry_date)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    تم الإصدار بواسطة: {warrant.issuing_officer_name}
+                  </div>
+                </div>
+              ))}
             </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground">لا توجد أوامر توقيف لهذا المواطن</div>
           )}
         </div>
       </TabsContent>

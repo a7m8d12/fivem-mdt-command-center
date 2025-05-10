@@ -27,39 +27,75 @@ const AdminPage = () => {
     const fetchUsers = async () => {
       setIsLoading(true);
       try {
-        // First get users from auth.users (using function)
-        const { data: authUsers, error: authError } = await supabase.rpc('get_users');
-        
-        if (authError) throw authError;
-
-        if (!authUsers || authUsers.length === 0) {
-          setUsers([]);
-          setIsLoading(false);
-          return;
-        }
-
-        // Get profiles from profiles table
+        // First get profiles from profiles table
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*');
           
         if (profilesError) throw profilesError;
-        
-        // Map auth users and profiles
-        const userProfiles: UserProfile[] = authUsers.map(authUser => {
-          const matchingProfile = profiles?.find(p => p.id === authUser.id) || null;
-          
-          return {
-            id: authUser.id,
-            email: authUser.email,
-            name: matchingProfile?.name || 'مستخدم غير معروف',
-            role: (matchingProfile?.role as 'admin' | 'officer' | 'dispatch') || 'officer',
-            badge_number: matchingProfile?.badge_number || '0000',
-            created_at: matchingProfile?.created_at || ''
-          };
-        });
 
-        setUsers(userProfiles);
+        if (!profiles || profiles.length === 0) {
+          setUsers([]);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Get auth users
+        try {
+          // Use RPC function to get users from auth.users
+          const { data: authUsers, error: authError } = await supabase.rpc('get_users');
+          
+          if (authError) {
+            console.error('Error fetching auth users:', authError);
+            // Even if this fails, we can still show profiles
+            
+            // Map just profiles
+            const userProfiles: UserProfile[] = profiles.map(profile => ({
+              id: profile.id,
+              email: 'لا يمكن الوصول للبريد الإلكتروني',
+              name: profile.name || 'مستخدم غير معروف',
+              role: (profile.role as 'admin' | 'officer' | 'dispatch') || 'officer',
+              badge_number: profile.badge_number || '0000',
+              created_at: profile.created_at || ''
+            }));
+            
+            setUsers(userProfiles);
+            return;
+          }
+          
+          // If we got auth users, map them with profiles
+          if (authUsers) {
+            // Map auth users and profiles
+            const userProfiles: UserProfile[] = profiles.map(profile => {
+              const matchingAuth = authUsers.find((auth: any) => auth.id === profile.id);
+              
+              return {
+                id: profile.id,
+                email: matchingAuth?.email || 'البريد الإلكتروني غير متاح',
+                name: profile.name || 'مستخدم غير معروف',
+                role: (profile.role as 'admin' | 'officer' | 'dispatch') || 'officer',
+                badge_number: profile.badge_number || '0000',
+                created_at: profile.created_at || ''
+              };
+            });
+            
+            setUsers(userProfiles);
+          }
+        } catch (authError) {
+          console.error('Error fetching auth users:', authError);
+          
+          // If auth users fetch fails, just show profiles
+          const userProfiles: UserProfile[] = profiles.map(profile => ({
+            id: profile.id,
+            email: 'لا يمكن الوصول للبريد الإلكتروني',
+            name: profile.name || 'مستخدم غير معروف',
+            role: (profile.role as 'admin' | 'officer' | 'dispatch') || 'officer',
+            badge_number: profile.badge_number || '0000',
+            created_at: profile.created_at || ''
+          }));
+          
+          setUsers(userProfiles);
+        }
       } catch (error) {
         console.error('Error fetching users:', error);
         toast.error('فشل في جلب بيانات المستخدمين');
