@@ -27,29 +27,32 @@ const AdminPage = () => {
     const fetchUsers = async () => {
       setIsLoading(true);
       try {
-        // First get profiles from profiles table
+        // استرجاع بيانات المستخدمين من جدول الملفات الشخصية
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
           .select('*');
           
-        if (profilesError) throw profilesError;
+        if (profilesError) {
+          throw profilesError;
+        }
 
+        // إذا لم يتم استرجاع أي بيانات
         if (!profiles || profiles.length === 0) {
           setUsers([]);
           setIsLoading(false);
           return;
         }
         
-        // Get auth users
+        // استرجاع بيانات المستخدمين من نظام المصادقة
         try {
-          // Use RPC function to get users from auth.users
+          // استخدام دالة RPC لاسترجاع بيانات المستخدمين من نظام المصادقة
           const { data: authUsers, error: authError } = await supabase.rpc('get_users');
           
           if (authError) {
+            // إذا حصل خطأ في استرجاع بيانات المستخدمين من نظام المصادقة
             console.error('Error fetching auth users:', authError);
-            // Even if this fails, we can still show profiles
             
-            // Map just profiles
+            // نستخدم البيانات من الملفات الشخصية فقط
             const userProfiles: UserProfile[] = profiles.map(profile => ({
               id: profile.id,
               email: 'لا يمكن الوصول للبريد الإلكتروني',
@@ -60,12 +63,9 @@ const AdminPage = () => {
             }));
             
             setUsers(userProfiles);
-            return;
-          }
-          
-          // If we got auth users, map them with profiles
-          if (authUsers) {
-            // Map auth users and profiles
+          } 
+          else if (authUsers) {
+            // دمج بيانات المستخدمين من نظام المصادقة مع الملفات الشخصية
             const userProfiles: UserProfile[] = profiles.map(profile => {
               const matchingAuth = authUsers.find((auth: any) => auth.id === profile.id);
               
@@ -84,7 +84,7 @@ const AdminPage = () => {
         } catch (authError) {
           console.error('Error fetching auth users:', authError);
           
-          // If auth users fetch fails, just show profiles
+          // نستخدم البيانات من الملفات الشخصية فقط في حالة الخطأ
           const userProfiles: UserProfile[] = profiles.map(profile => ({
             id: profile.id,
             email: 'لا يمكن الوصول للبريد الإلكتروني',
@@ -173,33 +173,39 @@ const AdminPage = () => {
               <p>جاري تحميل البيانات...</p>
             </CardContent>
           </Card>
-        ) : filteredUsers.length > 0 ? (
-          filteredUsers.map((user) => (
-            <Card key={user.id} className={user.id === currentUser?.id ? 'border-police-blue' : ''}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex justify-between">
-                  <span>{user.name}</span>
-                  {getRoleBadge(user.role)}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="text-sm text-muted-foreground">
-                  <div className="flex justify-between mb-1">
-                    <span>البريد الإلكتروني:</span>
-                    <span className="font-medium text-foreground">{user.email}</span>
+        ) : users.length > 0 ? (
+          users
+            .filter(user => 
+              user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              user.badge_number.includes(searchQuery)
+            )
+            .map((user) => (
+              <Card key={user.id} className={user.id === currentUser?.id ? 'border-police-blue' : ''}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex justify-between">
+                    <span>{user.name}</span>
+                    {getRoleBadge(user.role)}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="text-sm text-muted-foreground">
+                    <div className="flex justify-between mb-1">
+                      <span>البريد الإلكتروني:</span>
+                      <span className="font-medium text-foreground">{user.email}</span>
+                    </div>
+                    <div className="flex justify-between mb-1">
+                      <span>رقم الشارة:</span>
+                      <span className="font-medium text-foreground">{user.badge_number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>تاريخ التسجيل:</span>
+                      <span className="font-medium text-foreground">{formatDate(user.created_at)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between mb-1">
-                    <span>رقم الشارة:</span>
-                    <span className="font-medium text-foreground">{user.badge_number}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>تاريخ التسجيل:</span>
-                    <span className="font-medium text-foreground">{formatDate(user.created_at)}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                </CardContent>
+              </Card>
+            ))
         ) : (
           <Card className="col-span-full">
             <CardContent className="flex items-center justify-center p-6">

@@ -237,6 +237,66 @@ export type Database = {
         }
         Relationships: []
       }
+      reports: {
+        Row: {
+          charges: string[] | null
+          citizen_id: string
+          created_at: string | null
+          date: string
+          description: string
+          id: string
+          location: string
+          officer_id: string
+          report_number: string
+          status: string
+          title: string
+          type: string
+        }
+        Insert: {
+          charges?: string[] | null
+          citizen_id: string
+          created_at?: string | null
+          date: string
+          description: string
+          id?: string
+          location: string
+          officer_id: string
+          report_number: string
+          status?: string
+          title: string
+          type: string
+        }
+        Update: {
+          charges?: string[] | null
+          citizen_id?: string
+          created_at?: string | null
+          date?: string
+          description?: string
+          id?: string
+          location?: string
+          officer_id?: string
+          report_number?: string
+          status?: string
+          title?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reports_citizen_id_fkey"
+            columns: ["citizen_id"]
+            isOneToOne: false
+            referencedRelation: "citizens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reports_officer_id_fkey"
+            columns: ["officer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vehicles: {
         Row: {
           citizen_id: string

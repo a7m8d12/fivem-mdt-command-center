@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -35,6 +34,7 @@ const CreateReportPage = () => {
   const [description, setDescription] = useState<string>('');
   const [citizens, setCitizens] = useState<CitizenOption[]>([]);
   const [isLoadingCitizens, setIsLoadingCitizens] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [charges, setCharges] = useState<{ id: number; text: string; checked: boolean }[]>([
     { id: 1, text: 'قيادة بتهور', checked: false },
     { id: 2, text: 'قيادة تحت تأثير المخدرات', checked: false },
@@ -45,7 +45,7 @@ const CreateReportPage = () => {
     { id: 7, text: 'اخلال بالأمن العام', checked: false },
   ]);
 
-  // Fetch citizens from Supabase
+  // جلب بيانات المواطنين من قاعدة البيانات
   useEffect(() => {
     const fetchCitizens = async () => {
       setIsLoadingCitizens(true);
@@ -73,6 +73,7 @@ const CreateReportPage = () => {
     fetchCitizens();
   }, []);
 
+  // تصفية المواطنين حسب البحث
   const filteredCitizens = citizenSearch
     ? citizens.filter(citizen => citizen.name.includes(citizenSearch))
     : citizens;
@@ -83,10 +84,24 @@ const CreateReportPage = () => {
     ));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const generateReportNumber = (type: string) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    
+    const prefix = type === 'arrest' ? 'AR' : 
+                  type === 'incident' ? 'IR' : 
+                  type === 'investigation' ? 'IV' : 'TR';
+    
+    return `${prefix}-${year}${month}${day}-${random}`;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validation
+    // التحقق من صحة البيانات المدخلة
     if (!title.trim()) {
       toast.error("الرجاء إدخال عنوان التقرير");
       return;
@@ -117,9 +132,41 @@ const CreateReportPage = () => {
       return;
     }
 
-    // Mock report submission
-    toast.success("تم إنشاء التقرير بنجاح");
-    navigate('/reports');
+    setIsSubmitting(true);
+
+    try {
+      // تجهيز بيانات التقرير
+      const reportData = {
+        report_number: generateReportNumber(reportType),
+        title,
+        type: reportType,
+        citizen_id: citizenId,
+        officer_id: user?.id,
+        location,
+        date,
+        description,
+        status: 'open',
+        charges: reportType === 'arrest' 
+          ? charges.filter(charge => charge.checked).map(charge => charge.text) 
+          : []
+      };
+
+      // إرسال البيانات إلى قاعدة البيانات
+      const { error } = await supabase.from('reports').insert(reportData);
+      
+      if (error) {
+        console.error('Error creating report:', error);
+        throw error;
+      }
+
+      toast.success("تم إنشاء التقرير بنجاح");
+      navigate('/reports');
+    } catch (error) {
+      console.error('Error submitting report:', error);
+      toast.error("حدث خطأ أثناء إنشاء التقرير. الرجاء المحاولة مرة أخرى.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -267,8 +314,12 @@ const CreateReportPage = () => {
           <Button type="button" variant="outline" onClick={() => navigate('/reports')}>
             إلغاء
           </Button>
-          <Button type="submit" className="police-button">
-            حفظ التقرير
+          <Button 
+            type="submit" 
+            className="police-button"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'جاري الحفظ...' : 'حفظ التقرير'}
           </Button>
         </div>
       </form>

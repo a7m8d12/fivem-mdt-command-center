@@ -9,7 +9,8 @@ import {
   FileText,
   Filter,
   Pencil,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -53,37 +54,37 @@ const ReportsPage = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const navigate = useNavigate();
 
-  // Fetch reports from Supabase (using mock data for now)
+  // جلب التقارير من قاعدة البيانات
   useEffect(() => {
     const fetchReports = async () => {
       setIsLoading(true);
       try {
-        // For this example, we're using mock data since there's no reports table yet
-        // In a future implementation, this would fetch from Supabase
-        const mockReports: Report[] = [
-          {
-            id: '1',
-            report_number: 'AR-2023-001',
-            title: 'اعتقال - قيادة تحت تأثير المخدرات',
-            type: 'arrest',
-            officer_name: 'فهد العنزي',
-            status: 'closed',
-            date: '2023-07-22T16:45:00.000Z',
-            created_at: '2023-07-22T18:30:00.000Z',
-          },
-          {
-            id: '2',
-            report_number: 'IR-2023-042',
-            title: 'حادث مروري - طريق الملك فهد',
-            type: 'incident',
-            officer_name: 'محمد العلي',
-            status: 'open',
-            date: '2023-08-15T09:20:00.000Z',
-            created_at: '2023-08-15T10:30:00.000Z',
-          }
-        ];
+        // استعلام للحصول على التقارير مع اسم الضابط
+        const { data: reportsWithOfficers, error } = await supabase
+          .from('reports')
+          .select(`
+            *,
+            profiles:officer_id (name)
+          `)
+          .order('created_at', { ascending: false });
         
-        setReports(mockReports);
+        if (error) {
+          throw error;
+        }
+        
+        // تحويل البيانات إلى الشكل المطلوب
+        const formattedReports: Report[] = reportsWithOfficers.map((report: any) => ({
+          id: report.id,
+          report_number: report.report_number,
+          title: report.title,
+          type: report.type as 'arrest' | 'incident' | 'investigation' | 'traffic',
+          officer_name: report.profiles?.name || 'غير معروف',
+          status: report.status as 'open' | 'closed' | 'pending',
+          date: report.date,
+          created_at: report.created_at
+        }));
+        
+        setReports(formattedReports);
       } catch (error) {
         console.error('Error fetching reports:', error);
         toast.error('حدث خطأ أثناء جلب البيانات');
@@ -95,6 +96,7 @@ const ReportsPage = () => {
     fetchReports();
   }, []);
 
+  // تصفية التقارير حسب البحث والفلاتر
   const filteredReports = reports
     .filter((report) => 
       (searchQuery === '' || 
@@ -149,8 +151,13 @@ const ReportsPage = () => {
     if (!selectedReportId) return;
     
     try {
-      // In a real implementation, this would delete from Supabase
-      // Since we're using mock data for now, just remove from local state
+      const { error } = await supabase
+        .from('reports')
+        .delete()
+        .eq('id', selectedReportId);
+      
+      if (error) throw error;
+      
       setReports(reports.filter(report => report.id !== selectedReportId));
       setIsDeleteDialogOpen(false);
       toast.success('تم حذف التقرير بنجاح');
@@ -234,8 +241,11 @@ const ReportsPage = () => {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7} className="text-center py-4 text-muted-foreground">
-                  جاري تحميل البيانات...
+                <td colSpan={7} className="text-center py-4">
+                  <div className="flex items-center justify-center space-x-2 rtl:space-x-reverse">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-muted-foreground">جاري تحميل البيانات...</span>
+                  </div>
                 </td>
               </tr>
             ) : filteredReports.length > 0 ? (
@@ -273,7 +283,7 @@ const ReportsPage = () => {
         </table>
       </div>
       
-      {/* Delete Confirmation Dialog */}
+      {/* مربع حوار تأكيد الحذف */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
