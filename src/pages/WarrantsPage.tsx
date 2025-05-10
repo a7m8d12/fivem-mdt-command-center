@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +48,12 @@ const WarrantsPage = () => {
           
         if (warrantsError) throw warrantsError;
         
+        if (!warrantsData || warrantsData.length === 0) {
+          setWarrants([]);
+          setIsLoading(false);
+          return;
+        }
+        
         // Fetch citizen data
         const citizenIds = warrantsData.map((warrant: any) => warrant.citizen_id);
         const uniqueCitizenIds = [...new Set(citizenIds)];
@@ -67,8 +72,8 @@ const WarrantsPage = () => {
         });
         
         // Separately fetch officer data
-        const officerIds = warrantsData.map((warrant: any) => warrant.issuing_officer_id);
-        const uniqueOfficerIds = [...new Set(officerIds)].filter(id => id);
+        const officerIds = warrantsData.map((warrant: any) => warrant.issuing_officer_id).filter(Boolean);
+        const uniqueOfficerIds = [...new Set(officerIds)];
         
         let officerMap = new Map();
         if (uniqueOfficerIds.length > 0) {
@@ -77,12 +82,15 @@ const WarrantsPage = () => {
             .select('id, name')
             .in('id', uniqueOfficerIds);
             
-          if (officersError) throw officersError;
-          
-          // Create a map of officer IDs to names
-          officersData?.forEach((officer: any) => {
-            officerMap.set(officer.id, officer.name);
-          });
+          if (officersError) {
+            console.error('Error fetching officer data:', officersError);
+            // Continue even if there's an error fetching officer data
+          } else if (officersData) {
+            // Create a map of officer IDs to names
+            officersData.forEach((officer: any) => {
+              officerMap.set(officer.id, officer.name);
+            });
+          }
         }
         
         // Transform data to match Warrant type

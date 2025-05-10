@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,34 +72,45 @@ const CriminalRecordsPage = () => {
         // Fetch criminal records
         const { data: recordsData, error: recordsError } = await supabase
           .from('criminal_records')
-          .select(`
-            *,
-            citizens (first_name, last_name)
-          `)
+          .select('*')
           .order('created_at', { ascending: false });
           
         if (recordsError) {
           throw recordsError;
         }
         
-        // Separately fetch officer names since there's no relation set up
-        const officerIds = recordsData.map((record: any) => record.officer_id);
-        const uniqueOfficerIds = [...new Set(officerIds)];
-        
-        const { data: officersData, error: officersError } = await supabase
-          .from('profiles')
-          .select('id, name')
-          .in('id', uniqueOfficerIds);
-          
-        if (officersError) {
-          throw officersError;
+        if (!recordsData || recordsData.length === 0) {
+          setRecords([]);
+          setIsLoading(false);
+          return;
         }
         
-        // Create a map of officer IDs to names
-        const officerMap = new Map();
-        officersData?.forEach((officer: any) => {
-          officerMap.set(officer.id, officer.name);
+        // Create a map of citizen IDs to names
+        const citizenMap = new Map();
+        citizensData.forEach((citizen: any) => {
+          citizenMap.set(citizen.id, `${citizen.first_name} ${citizen.last_name}`);
         });
+        
+        // Separately fetch officer names since there's no relation set up
+        const officerIds = recordsData.map((record: any) => record.officer_id).filter(Boolean);
+        const uniqueOfficerIds = [...new Set(officerIds)];
+        
+        let officerMap = new Map();
+        if (uniqueOfficerIds.length > 0) {
+          const { data: officersData, error: officersError } = await supabase
+            .from('profiles')
+            .select('id, name')
+            .in('id', uniqueOfficerIds);
+            
+          if (officersError) {
+            console.error('Error fetching officer data:', officersError);
+            // Continue even if there's an error fetching officer data
+          } else if (officersData) {
+            officersData.forEach((officer: any) => {
+              officerMap.set(officer.id, officer.name);
+            });
+          }
+        }
         
         // Transform criminal records data
         const transformedRecords: CriminalRecord[] = recordsData.map((record: any) => ({

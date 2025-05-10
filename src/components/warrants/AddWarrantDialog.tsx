@@ -118,7 +118,7 @@ const AddWarrantDialog = ({ isOpen, onOpenChange, onWarrantAdded }: AddWarrantDi
           reason: data[0].reason,
           issue_date: data[0].issue_date,
           expiry_date: data[0].expiry_date,
-          status: data[0].status,
+          status: data[0].status as 'active' | 'executed' | 'expired', // Fix type casting here
           issuing_officer_id: data[0].issuing_officer_id,
           issuing_officer_name: user?.name || 'ضابط غير معروف',
           created_at: data[0].created_at
