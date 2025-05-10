@@ -59,32 +59,53 @@ const ReportsPage = () => {
     const fetchReports = async () => {
       setIsLoading(true);
       try {
-        // استعلام للحصول على التقارير مع اسم الضابط
-        const { data: reportsWithOfficers, error } = await supabase
+        // استعلام مبسط لتفادي مشكلة التكرار اللانهائي
+        const { data: reportsData, error } = await supabase
           .from('reports')
-          .select(`
-            *,
-            profiles:officer_id (name)
-          `)
-          .order('created_at', { ascending: false });
+          .select('*');
         
         if (error) {
           throw error;
         }
         
-        // تحويل البيانات إلى الشكل المطلوب
-        const formattedReports: Report[] = reportsWithOfficers.map((report: any) => ({
-          id: report.id,
-          report_number: report.report_number,
-          title: report.title,
-          type: report.type as 'arrest' | 'incident' | 'investigation' | 'traffic',
-          officer_name: report.profiles?.name || 'غير معروف',
-          status: report.status as 'open' | 'closed' | 'pending',
-          date: report.date,
-          created_at: report.created_at
-        }));
-        
-        setReports(formattedReports);
+        // الحصول على معلومات الضباط من جدول profiles
+        if (reportsData && reportsData.length > 0) {
+          // استرجاع معلومات الملفات الشخصية بشكل منفصل
+          const officerIds = [...new Set(reportsData.map(report => report.officer_id))];
+          let officerNames: Record<string, string> = {};
+          
+          try {
+            const { data: profilesData } = await supabase
+              .from('profiles')
+              .select('id, name')
+              .in('id', officerIds);
+              
+            if (profilesData) {
+              officerNames = profilesData.reduce((acc: Record<string, string>, profile: any) => {
+                acc[profile.id] = profile.name;
+                return acc;
+              }, {});
+            }
+          } catch (profileError) {
+            console.error('Error fetching officer profiles:', profileError);
+          }
+
+          // تحويل البيانات إلى الشكل المطلوب
+          const formattedReports: Report[] = reportsData.map((report: any) => ({
+            id: report.id,
+            report_number: report.report_number,
+            title: report.title,
+            type: report.type as 'arrest' | 'incident' | 'investigation' | 'traffic',
+            officer_name: officerNames[report.officer_id] || 'غير معروف',
+            status: report.status as 'open' | 'closed' | 'pending',
+            date: report.date,
+            created_at: report.created_at || ''
+          }));
+          
+          setReports(formattedReports);
+        } else {
+          setReports([]);
+        }
       } catch (error) {
         console.error('Error fetching reports:', error);
         toast.error('حدث خطأ أثناء جلب البيانات');

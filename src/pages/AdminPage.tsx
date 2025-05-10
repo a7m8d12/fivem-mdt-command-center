@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Search, UserCog, Shield, BadgeCheck, X } from 'lucide-react';
+import { Search, UserCog, Shield, BadgeCheck, X, Loader2 } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -27,13 +27,13 @@ const AdminPage = () => {
     const fetchUsers = async () => {
       setIsLoading(true);
       try {
-        // استرجاع بيانات المستخدمين من جدول الملفات الشخصية
-        const { data: profiles, error: profilesError } = await supabase
+        // طريقة بديلة لاسترجاع البيانات تجنباً للتكرار اللانهائي
+        const { data: profiles, error } = await supabase
           .from('profiles')
-          .select('*');
+          .select('id, name, role, badge_number, created_at');
           
-        if (profilesError) {
-          throw profilesError;
+        if (error) {
+          throw error;
         }
 
         // إذا لم يتم استرجاع أي بيانات
@@ -43,62 +43,40 @@ const AdminPage = () => {
           return;
         }
         
-        // استرجاع بيانات المستخدمين من نظام المصادقة
+        // استخدام بيانات الملفات الشخصية مع إضافة حقل البريد الإلكتروني
+        const userProfiles: UserProfile[] = profiles.map(profile => ({
+          id: profile.id,
+          email: 'user@example.com', // قيمة افتراضية للبريد الإلكتروني
+          name: profile.name || 'مستخدم غير معروف',
+          role: (profile.role as 'admin' | 'officer' | 'dispatch') || 'officer',
+          badge_number: profile.badge_number || '0000',
+          created_at: profile.created_at || ''
+        }));
+
+        // لاحقاً يمكن استبدال البريد الإلكتروني من بيانات النظام
         try {
-          // استخدام دالة RPC لاسترجاع بيانات المستخدمين من نظام المصادقة
           const { data: authUsers, error: authError } = await supabase.rpc('get_users');
           
-          if (authError) {
-            // إذا حصل خطأ في استرجاع بيانات المستخدمين من نظام المصادقة
-            console.error('Error fetching auth users:', authError);
-            
-            // نستخدم البيانات من الملفات الشخصية فقط
-            const userProfiles: UserProfile[] = profiles.map(profile => ({
-              id: profile.id,
-              email: 'لا يمكن الوصول للبريد الإلكتروني',
-              name: profile.name || 'مستخدم غير معروف',
-              role: (profile.role as 'admin' | 'officer' | 'dispatch') || 'officer',
-              badge_number: profile.badge_number || '0000',
-              created_at: profile.created_at || ''
-            }));
-            
-            setUsers(userProfiles);
-          } 
-          else if (authUsers) {
-            // دمج بيانات المستخدمين من نظام المصادقة مع الملفات الشخصية
-            const userProfiles: UserProfile[] = profiles.map(profile => {
+          if (!authError && authUsers) {
+            const updatedUsers = userProfiles.map(profile => {
               const matchingAuth = authUsers.find((auth: any) => auth.id === profile.id);
-              
               return {
-                id: profile.id,
-                email: matchingAuth?.email || 'البريد الإلكتروني غير متاح',
-                name: profile.name || 'مستخدم غير معروف',
-                role: (profile.role as 'admin' | 'officer' | 'dispatch') || 'officer',
-                badge_number: profile.badge_number || '0000',
-                created_at: profile.created_at || ''
+                ...profile,
+                email: matchingAuth?.email || 'البريد الإلكتروني غير متاح'
               };
             });
-            
+            setUsers(updatedUsers);
+          } else {
             setUsers(userProfiles);
           }
         } catch (authError) {
           console.error('Error fetching auth users:', authError);
-          
-          // نستخدم البيانات من الملفات الشخصية فقط في حالة الخطأ
-          const userProfiles: UserProfile[] = profiles.map(profile => ({
-            id: profile.id,
-            email: 'لا يمكن الوصول للبريد الإلكتروني',
-            name: profile.name || 'مستخدم غير معروف',
-            role: (profile.role as 'admin' | 'officer' | 'dispatch') || 'officer',
-            badge_number: profile.badge_number || '0000',
-            created_at: profile.created_at || ''
-          }));
-          
           setUsers(userProfiles);
         }
       } catch (error) {
         console.error('Error fetching users:', error);
         toast.error('فشل في جلب بيانات المستخدمين');
+        setUsers([]);
       } finally {
         setIsLoading(false);
       }
@@ -170,42 +148,39 @@ const AdminPage = () => {
         {isLoading ? (
           <Card className="col-span-full">
             <CardContent className="flex items-center justify-center p-6">
-              <p>جاري تحميل البيانات...</p>
+              <div className="flex items-center space-x-2 rtl:space-x-reverse">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <p>جاري تحميل البيانات...</p>
+              </div>
             </CardContent>
           </Card>
-        ) : users.length > 0 ? (
-          users
-            .filter(user => 
-              user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-              user.badge_number.includes(searchQuery)
-            )
-            .map((user) => (
-              <Card key={user.id} className={user.id === currentUser?.id ? 'border-police-blue' : ''}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg flex justify-between">
-                    <span>{user.name}</span>
-                    {getRoleBadge(user.role)}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="text-sm text-muted-foreground">
-                    <div className="flex justify-between mb-1">
-                      <span>البريد الإلكتروني:</span>
-                      <span className="font-medium text-foreground">{user.email}</span>
-                    </div>
-                    <div className="flex justify-between mb-1">
-                      <span>رقم الشارة:</span>
-                      <span className="font-medium text-foreground">{user.badge_number}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>تاريخ التسجيل:</span>
-                      <span className="font-medium text-foreground">{formatDate(user.created_at)}</span>
-                    </div>
+        ) : filteredUsers.length > 0 ? (
+          filteredUsers.map((user) => (
+            <Card key={user.id} className={user.id === currentUser?.id ? 'border-police-blue' : ''}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex justify-between">
+                  <span>{user.name}</span>
+                  {getRoleBadge(user.role)}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="text-sm text-muted-foreground">
+                  <div className="flex justify-between mb-1">
+                    <span>البريد الإلكتروني:</span>
+                    <span className="font-medium text-foreground">{user.email}</span>
                   </div>
-                </CardContent>
-              </Card>
-            ))
+                  <div className="flex justify-between mb-1">
+                    <span>رقم الشارة:</span>
+                    <span className="font-medium text-foreground">{user.badge_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>تاريخ التسجيل:</span>
+                    <span className="font-medium text-foreground">{formatDate(user.created_at)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
         ) : (
           <Card className="col-span-full">
             <CardContent className="flex items-center justify-center p-6">
